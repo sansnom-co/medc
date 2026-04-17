@@ -1,10 +1,10 @@
 #!/bin/bash
-# LXC Health Check Script
+# MEDC — LXC health-check script
 #
-# /usr/local/bin/check-lxc-health.sh
-# add to cron @reboot sleep 60 && /usr/local/bin/check-lxc-health.sh > /var/log/lxc-health-boot.log 2>&1
+# Deploy as /usr/local/bin/check-medc-health.sh and wire into cron, e.g.
+#   @reboot sleep 60 && /usr/local/bin/check-medc-health.sh > /var/log/medc-health-boot.log 2>&1
 
-echo "=== LXC Health Check ==="
+echo "=== MEDC Health Check ==="
 echo "Date: $(date)"
 echo
 
