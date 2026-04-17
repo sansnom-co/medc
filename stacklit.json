@@ -1,0 +1,69 @@
+{
+  "$schema": "https://stacklit.dev/schema/v1.json",
+  "version": "1",
+  "generated_at": "2026-04-17T13:30:19Z",
+  "stacklit_version": "dev",
+  "merkle_hash": "3be0b1beaa29b705d516d35915ee5dc7e9d7f1e7d8c1cbe511dfe3281d245cc8",
+  "project": {
+    "name": "minimal-extendable-data-centre",
+    "root": ".",
+    "type": "single"
+  },
+  "tech": {
+    "primary_language": "shell",
+    "languages": {
+      "shell": {
+        "files": 6,
+        "lines": 756
+      }
+    }
+  },
+  "structure": {
+    "entrypoints": null,
+    "total_files": 6,
+    "total_lines": 756
+  },
+  "modules": {
+    "root": {
+      "purpose": "Root package",
+      "language": "shell",
+      "files": 6,
+      "lines": 756,
+      "file_list": [
+        "check-vcd-health.sh",
+        "create-containers.sh",
+        "full-vcd-setup.sh",
+        "init-containers.sh",
+        "vcd-k8s-powerup.sh",
+        "vcd-production-ready.sh"
+      ],
+      "activity": "low"
+    }
+  },
+  "dependencies": {
+    "edges": null,
+    "entrypoints": null,
+    "most_depended": [
+      "root"
+    ],
+    "isolated": [
+      "root"
+    ]
+  },
+  "git": {
+    "recent": [
+      "README.md",
+      "check-vcd-health.sh",
+      "create-containers.sh",
+      "crontab-entry.txt",
+      "full-vcd-setup.sh",
+      "init-containers.sh",
+      "readme-startup.txt",
+      "readme.txt",
+      "vcd-describe.txt",
+      "vcd-k8s-powerup.sh"
+    ]
+  },
+  "hints": {},
+  "architecture": {}
+}
