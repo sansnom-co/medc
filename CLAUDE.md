@@ -92,6 +92,13 @@ These survive the refactor. Do not silently change any of them.
   3 drift, 4 precondition); no interactive prompts in `apply`/
   `destroy`. Schema changes bump `medc.version`. These are bake-in-now
   constraints because the future REST/MCP API depends on them.
+- **State artifact contract**: `medc apply` writes
+  `/etc/medc/state.json` (root:root 0644, atomic-rename) on every
+  success. This is **MEDC's interface to downstream repos** (the k0s
+  installer, k0rdent-deployment). Don't break the schema in
+  `docs/v1-design.md` §16 without bumping `medc_version`. Fields are
+  added at the end of objects; never renamed or removed within a
+  major version.
 
 ## Files and their roles
 
@@ -191,6 +198,23 @@ this file.
 - **Migration from v0**: clean cut. v1 ship deletes the v0 LXC
   scripts wholesale. No `legacy/` directory; git history is the
   archive.
+- **Profile templating**: shell `envsubst`. Switch trigger if
+  templating ever needs branching/loops — see `docs/v1-design.md`
+  §15.9.
+- **MAC autogeneration**: deterministic from IP last octet —
+  `02:6d:65:64:63:XX` (which spells `02:medc:...:XX` in hex bytes).
+  Persisted into the topology config on first apply if user omits
+  `mac`. See §15.9.
+- **Binary host server**: nginx in Docker on the gateway. Caddy was
+  the alternative. See §15.9.
+- **`egress_interface: auto`** resolves at apply time to the host's
+  first default-route NIC (`ip -4 route show default | awk
+  '/default/ {print $5; exit}'`). No default route → exit 4
+  (precondition). See §15.9.
+- **Validation rules**: `medc apply` refuses (exit 2) if the topology
+  has no gateway, multiple gateways, gateway IP ≠ network.gateway_ip,
+  IPs outside the network CIDR, IPs inside the DHCP range, or
+  duplicate IPs/MACs. See §15.9 and §10.1.
 
 ## Roadmap (agent-flavoured)
 
@@ -202,10 +226,13 @@ Mirrors `MEDC-overview.md` §4 and `docs/v1-design.md`:
 - **Phase B — In-place LXC parameterization** *(skipped)* — the
   Incus migration *is* the parameterization. No reason to touch
   v0 LXC scripts before deletion.
-- **Phase C — Incus + gateway implementation** *(in progress: design
-  complete, code not started)* — see `docs/v1-design.md` for the
-  spec. Implementation lands in feature branches off `master`.
-  Direct push to `master` is policy-blocked; PRs only.
+- **Phase C — Incus + gateway implementation** *(in progress)* —
+  design complete; implementation plan in 7 stacked PRs (see
+  `~/.claude/plans/this-repo-contains-the-groovy-cosmos.md` for the
+  PR slicing). PR1 (schema + reference config + state artifact spec)
+  is the first; later PRs add profile templates, host prereqs,
+  `medc apply`, `medc destroy`, read verbs. Direct push to `master`
+  is policy-blocked; PRs only.
 - **Phase D — Verification suite** — blocked on C.
 - **Phase E — k0rdent install** — documented only, never scripted
   in this repo.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://stacklit.dev/schema/v1.json",
   "version": "1",
-  "generated_at": "2026-04-27T13:52:27Z",
+  "generated_at": "2026-04-30T19:05:16Z",
   "stacklit_version": "dev",
   "merkle_hash": "f5a406f9a42606d208ddb4ba8ed3e491515c495e4cae1dc20c1ee67223a1bfe2",
   "project": {
@@ -54,22 +54,22 @@
     "hot_files": [
       {
         "path": "stacklit.json",
+        "commits_90d": 3
+      },
+      {
+        "path": "CLAUDE.md",
+        "commits_90d": 2
+      },
+      {
+        "path": "DEPENDENCIES.md",
+        "commits_90d": 2
+      },
+      {
+        "path": "MEDC-overview.md",
         "commits_90d": 2
       },
       {
         "path": "AGENTS.md",
-        "commits_90d": 1
-      },
-      {
-        "path": "CLAUDE.md",
-        "commits_90d": 1
-      },
-      {
-        "path": "DEPENDENCIES.md",
-        "commits_90d": 1
-      },
-      {
-        "path": "MEDC-overview.md",
         "commits_90d": 1
       },
       {
@@ -82,6 +82,14 @@
       },
       {
         "path": "crontab-entry.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "docs/lxc-parameter-inventory.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "docs/v1-design.md",
         "commits_90d": 1
       },
       {
@@ -114,28 +122,28 @@
       }
     ],
     "recent": [
-      "AGENTS.md",
       "CLAUDE.md",
+      "DEPENDENCIES.md",
       "MEDC-overview.md",
+      "docs/lxc-parameter-inventory.md",
+      "docs/v1-design.md",
+      "stacklit.json",
+      "AGENTS.md",
+      "README.md",
+      "check-medc-health.sh",
+      "crontab-entry.txt"
+    ],
+    "stable": [
+      "AGENTS.md",
       "README.md",
       "check-medc-health.sh",
       "crontab-entry.txt",
+      "docs/lxc-parameter-inventory.md",
+      "docs/v1-design.md",
       "full-medc-setup.sh",
       "medc-k8s-powerup.sh",
       "medc-production-ready.sh",
       "readme-startup.txt"
-    ],
-    "stable": [
-      "AGENTS.md",
-      "CLAUDE.md",
-      "DEPENDENCIES.md",
-      "MEDC-overview.md",
-      "README.md",
-      "check-medc-health.sh",
-      "crontab-entry.txt",
-      "full-medc-setup.sh",
-      "medc-k8s-powerup.sh",
-      "medc-production-ready.sh"
     ]
   },
   "hints": {},
