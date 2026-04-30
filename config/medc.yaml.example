@@ -1,0 +1,260 @@
+# =============================================================================
+# medc.yaml — MEDC v1 reference configuration
+# =============================================================================
+#
+# This is the single source of truth for a MEDC deployment. `medc apply`
+# consumes this file and produces:
+#   • the Incus network, storage pool, and profiles
+#   • the gateway instance with its dnsmasq, NAT, registry, binaries, tailscale
+#   • the four lab instances (mgmt + master + 2 workers, by default)
+#   • a state artifact at /etc/medc/state.json that downstream repos
+#     (k0s installer, k0rdent-deployment) read to know the lab's shape
+#
+# Schema is documented in detail in `docs/v1-design.md` §3.
+# Architectural rationale is in `MEDC-overview.md`.
+# Agent-facing notes are in `CLAUDE.md`.
+#
+# Conventions in this file:
+#   • All fields shown are either required or carry their default value.
+#   • Comment a field out (or remove it) to accept the default.
+#   • `medc.version: "1"` is contract — bumped on breaking schema changes.
+# -----------------------------------------------------------------------------
+
+medc:
+  version: "1"
+
+  # ---------------------------------------------------------------------------
+  # network — Incus bridge and the lab subnet
+  # ---------------------------------------------------------------------------
+  # The Incus bridge is created with NAT off, DHCP off, DNS off — those are
+  # the gateway instance's job. The bridge is just an L2 fabric.
+  # ---------------------------------------------------------------------------
+  network:
+    name: medcbr0                      # Incus network name
+    ipv4: 10.0.3.0/24                  # lab subnet CIDR
+    bridge_address: 10.0.3.1           # bridge interface's host-side IP
+                                       # (not the lab's default gateway)
+    gateway_ip: 10.0.3.5               # the gateway INSTANCE's lab-side IP
+                                       # — this is the default route for
+                                       # every other instance
+    dns_domain: medc.local             # DNS suffix; also the suffix for
+                                       # registry.* and binaries.* CNAMEs
+    dhcp_range: 10.0.3.100-10.0.3.199  # range for unreserved clients;
+                                       # static instances must lie OUTSIDE
+                                       # this range
+    egress_interface: auto             # host NIC pulled into the gateway as
+                                       # eth1 (macvlan). "auto" resolves to
+                                       # the host's default route at apply
+                                       # time. Override for cloud VPSes
+                                       # where the public NIC is e.g. enp1s0.
+
+  # ---------------------------------------------------------------------------
+  # topology — list of instances
+  # ---------------------------------------------------------------------------
+  # Exactly one instance must have `role: gateway`. Its `ip` must equal
+  # `network.gateway_ip`. The default topology of one mgmt + one k8s-control
+  # + two k8s-workers matches k0rdent's child-cluster pattern.
+  #
+  # MAC addresses follow the deterministic rule:
+  #   02:6d:65:64:63:XX  (= "02:medc:...:XX")  where XX = last octet of IP
+  # If `mac` is omitted, `medc apply` autogenerates per the rule. Persisted
+  # back into this file on first apply for human-readable record.
+  # ---------------------------------------------------------------------------
+  topology:
+    instances:
+      - name: medc-gateway
+        role: gateway                  # exactly one gateway per topology
+        ip: 10.0.3.5
+        mac: 02:6d:65:64:63:05         # deterministic; last octet = 0x05
+        cpu: 2
+        memory: 4GiB
+        autostart: true                # per-instance flag; the operator-block
+                                       # `maintenance_mode: true` overrides
+
+      - name: k0rdent-mgmt
+        role: mgmt
+        ip: 10.0.3.10
+        mac: 02:6d:65:64:63:0a         # 0x0a = 10
+        cpu: 2
+        memory: 8GiB                   # bumped from 4: k0rdent MCM memory
+                                       # pressure observed in practice
+        autostart: true
+
+      - name: k0s-child-master
+        role: k8s-control
+        ip: 10.0.3.20
+        mac: 02:6d:65:64:63:14         # 0x14 = 20
+        cpu: 2
+        memory: 4GiB
+        autostart: true
+
+      - name: k0s-child-worker1
+        role: k8s-worker
+        ip: 10.0.3.21
+        mac: 02:6d:65:64:63:15         # 0x15 = 21
+        cpu: 2
+        memory: 4GiB
+        autostart: true
+
+      - name: k0s-child-worker2
+        role: k8s-worker
+        ip: 10.0.3.22
+        mac: 02:6d:65:64:63:16         # 0x16 = 22
+        cpu: 2
+        memory: 4GiB
+        autostart: true
+
+  # ---------------------------------------------------------------------------
+  # image — defaults applied to every instance
+  # ---------------------------------------------------------------------------
+  image:
+    distribution: debian
+    release: trixie
+    architecture: auto                 # "auto" (= host arch) | x86_64 | arm64
+                                       # default x86_64 in practice; v0's
+                                       # hardcoded arm64 was a bug, fixed.
+
+  # ---------------------------------------------------------------------------
+  # hardening — security posture + k8s-readiness
+  # ---------------------------------------------------------------------------
+  # All sysctls and swap-off apply via cloud-init `runcmd` at first boot
+  # of each instance (Incus profiles do not have a direct equivalent for
+  # LXC's lxc.sysctl.* knob).
+  # ---------------------------------------------------------------------------
+  hardening:
+    security_privileged: true          # required for systemd correctness
+                                       # inside containers; v1 default
+    apparmor_profile: default          # "default" | "unconfined" (raw.lxc)
+    swap_in_container: false           # k8s requirement
+    sysctls:
+      net.bridge.bridge-nf-call-iptables: 1
+      net.bridge.bridge-nf-call-ip6tables: 1
+      net.ipv4.ip_forward: 1
+      fs.inotify.max_user_instances: 524288
+      fs.inotify.max_user_watches: 524288
+    kernel_modules_host:               # loaded + persisted to
+      - br_netfilter                   # /etc/modules-load.d/medc.conf
+      - overlay                        # by medc-host-prereqs.sh
+
+  # ---------------------------------------------------------------------------
+  # auth — operator user account + SSH posture
+  # ---------------------------------------------------------------------------
+  # SSH-key auth is the v1 default. v1 refuses to apply if
+  # ssh_authorized_keys is empty UNLESS password_auth is explicitly true.
+  # ---------------------------------------------------------------------------
+  auth:
+    user: robot
+    ssh_authorized_keys:               # required (unless password_auth=true)
+      - ssh-ed25519 AAAA...REPLACE_ME operator@laptop
+    sudo_nopasswd: true                # convenient for lab use; revisit for
+                                       # multi-user environments
+    password_auth: false               # default off; flip to true + add a
+                                       # password block (not in v1 schema yet)
+                                       # for lab/demo mode
+    permit_root_login: false           # default off
+
+  # ---------------------------------------------------------------------------
+  # connectivity — proxies, tailscale, wireguard, ingress
+  # ---------------------------------------------------------------------------
+  # Tailscale runs in two tiers:
+  #   • host tier   — superuser tailscaled on the Incus HOST,
+  #                   tag:medc-admin, for troubleshooting incusd / kernel /
+  #                   storage. Not exposed to app admins.
+  #   • gateway tier — single tailscaled on the gateway INSTANCE,
+  #                   tag:medc-app-admin, advertising 10.0.3.0/24 as a
+  #                   subnet route. App admins reach lab containers via
+  #                   the gateway. NO per-container tailscaled.
+  # ---------------------------------------------------------------------------
+  connectivity:
+    http_proxy: ""                     # propagated into apt + per-instance env
+    https_proxy: ""                    # via cloud-init when set
+    no_proxy: ""
+
+    tailscale:
+      host:
+        enabled: true
+        tailnet: ""                    # "" = default tailnet for the auth key
+        tags:
+          - tag:medc-admin
+        auth_key_env: MEDC_TS_HOST_AUTH_KEY
+
+      gateway:
+        enabled: true
+        tailnet: ""
+        tags:
+          - tag:medc-app-admin
+        advertise_routes:
+          - 10.0.3.0/24
+        auth_key_env: MEDC_TS_GATEWAY_AUTH_KEY
+
+      remote_clusters: []              # future: external k0rdent clusters
+                                       # reachable via tailscale; v1 ships
+                                       # the schema shape, no implementation
+
+    wireguard:                         # alternative VPN, terminates on gateway
+      enabled: false                   # disabled by default
+      listen_port: 51820
+      public_key: ""                   # generated on first apply if empty
+      peers: []                        # list of {name, public_key, allowed_ips}
+
+    ingress: []                        # list of {host_port, target,
+                                       # target_port, protocol}; rendered as
+                                       # iptables DNAT rules on the gateway's
+                                       # eth1. Empty in scenario B (corp lab).
+
+  # ---------------------------------------------------------------------------
+  # infra — services hosted on the gateway instance
+  # ---------------------------------------------------------------------------
+  # Registry and binary host are co-located on the gateway. Distinct DNS
+  # names via dnsmasq CNAMEs:
+  #   registry.medc.local  -> medc-gateway.medc.local
+  #   binaries.medc.local  -> medc-gateway.medc.local
+  # ---------------------------------------------------------------------------
+  infra:
+    registry:
+      enabled: true
+      product: registry                # "registry" (registry:2) only in v1;
+                                       # "harbor" and "nexus" reserved
+      port: 5000
+      data_volume_size: 20GiB
+      tls: false                       # plain HTTP for lab default
+
+    binary_host:
+      enabled: true
+      port: 80
+      root: /var/lib/medc/binaries
+
+    cnames:
+      - { alias: registry, target: medc-gateway }
+      - { alias: binaries, target: medc-gateway }
+
+  # ---------------------------------------------------------------------------
+  # storage — Incus storage pool
+  # ---------------------------------------------------------------------------
+  # btrfs strongly preferred (instant CoW snapshots = MEDC's "rebuild in
+  # seconds" property). bcachefs would also work but Incus has no driver
+  # for it yet. dir is the slow fallback.
+  # ---------------------------------------------------------------------------
+  storage:
+    pool_driver: btrfs                 # btrfs | zfs | dir | lvm | lvm-thin
+    pool_name: medc
+    snapshot_retention_days: 7
+
+  # ---------------------------------------------------------------------------
+  # operator — maintenance + backup paths
+  # ---------------------------------------------------------------------------
+  operator:
+    maintenance_mode: false            # global toggle; if true at apply,
+                                       # all instances stop and have their
+                                       # boot.autostart cleared
+    backup_dir: /var/backups/medc      # destination for `medc snapshot --export`
+
+# =============================================================================
+# Environment variables consumed by `medc apply` (not part of the schema)
+# =============================================================================
+#   MEDC_TS_HOST_AUTH_KEY      tailscale auth key for the host tailscaled
+#   MEDC_TS_GATEWAY_AUTH_KEY   tailscale auth key for the gateway tailscaled
+#   MEDC_ASSUME_YES            non-interactive apply (= --yes flag)
+#   MEDC_CONFIG                path to this file (= --config flag); default
+#                              /etc/medc/medc.yaml
+# -----------------------------------------------------------------------------
