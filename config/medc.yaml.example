@@ -154,7 +154,7 @@ medc:
     permit_root_login: false           # default off
 
   # ---------------------------------------------------------------------------
-  # connectivity — proxies, tailscale, wireguard, ingress
+  # connectivity — proxies, tailscale, ingress
   # ---------------------------------------------------------------------------
   # Tailscale runs in two tiers:
   #   • host tier   — superuser tailscaled on the Incus HOST,
@@ -191,12 +191,6 @@ medc:
                                        # reachable via tailscale; v1 ships
                                        # the schema shape, no implementation
 
-    wireguard:                         # alternative VPN, terminates on gateway
-      enabled: false                   # disabled by default
-      listen_port: 51820
-      public_key: ""                   # generated on first apply if empty
-      peers: []                        # list of {name, public_key, allowed_ips}
-
     ingress: []                        # list of {host_port, target,
                                        # target_port, protocol}; rendered as
                                        # iptables DNAT rules on the gateway's
@@ -205,28 +199,24 @@ medc:
   # ---------------------------------------------------------------------------
   # infra — services hosted on the gateway instance
   # ---------------------------------------------------------------------------
-  # Registry and binary host are co-located on the gateway. Distinct DNS
-  # names via dnsmasq CNAMEs:
-  #   registry.medc.local  -> medc-gateway.medc.local
-  #   binaries.medc.local  -> medc-gateway.medc.local
+  # The binary host is on the gateway. The container registry is NOT in
+  # MEDC v1 — it's the k0s installer's job (the second repo in the layered
+  # architecture). When the k0s installer deploys a registry, an operator
+  # adds a CNAME entry below pointing `registry.<dns_domain>` to wherever
+  # it lives.
   # ---------------------------------------------------------------------------
   infra:
-    registry:
-      enabled: true
-      product: registry                # "registry" (registry:2) only in v1;
-                                       # "harbor" and "nexus" reserved
-      port: 5000
-      data_volume_size: 20GiB
-      tls: false                       # plain HTTP for lab default
-
     binary_host:
       enabled: true
       port: 80
       root: /var/lib/medc/binaries
 
-    cnames:
-      - { alias: registry, target: medc-gateway }
+    cnames:                            # served by gateway dnsmasq
       - { alias: binaries, target: medc-gateway }
+      # Operators add more entries here, e.g.:
+      #   - { alias: registry, target: <wherever-the-k0s-installer-deploys> }
+      # The `target` may be an instance name or a hostname; dnsmasq resolves
+      # it via the lab's host-records.
 
   # ---------------------------------------------------------------------------
   # storage — Incus storage pool
