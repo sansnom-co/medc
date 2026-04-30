@@ -35,17 +35,14 @@ MEDC's **only** contract with downstream is `/etc/medc/state.yaml`
 ## In flight
 
 - [ ] PRs #1, #2, #3 — open, awaiting review/merge.
+- [ ] **v1 PR2 — profile templates** (PR #4) — open. Adds five
+      `profiles/medc-*.yaml.tmpl` templates + `profiles/README.md`
+      (envsubst convention, indented-multi-line-var trick).
 
 ## v1 implementation pipeline (next)
 
 Each lands as its own stacked PR. Plan in
 `~/.claude/plans/this-repo-contains-the-groovy-cosmos.md`.
-
-- [ ] **v1 PR2 — profile templates**
-      `profiles/medc-{base,gateway,mgmt,k8s-control,k8s-worker}.yaml.tmpl`
-      Templating via shell `envsubst`. The gateway template is the fat
-      one (dnsmasq + tailscale subnet router + iptables NAT + nginx
-      binary host).
 - [ ] **v1 PR3 — host prereqs + Incus init preseed**
       `host/medc-host-prereqs.sh`, `host/incus-init.yaml.tmpl`.
       apt installs (incus, tailscale, iptables-persistent),
