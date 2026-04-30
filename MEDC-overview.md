@@ -90,7 +90,7 @@ Design tenets:
 The refactor replaces the hand-rolled bridge + dnsmasq + iptables plumbing
 with **Incus** primitives and introduces a **gateway instance** that
 mirrors what a real datacenter does: one router/services VM holding the
-DHCP, DNS, NAT, ingress, VPN termination, registry, and binary hosting.
+DHCP, DNS, NAT, ingress, tailscale termination, and binary hosting.
 Every hardcoded value moves into a single YAML config (`medc.yaml`).
 
 ```
@@ -109,8 +109,6 @@ Every hardcoded value moves into a single YAML config (`medc.yaml`).
 │   └─ medc-gateway (.5)                                          │   │
 │        • dnsmasq    (DHCP + DNS for the lab)                    │   │
 │        • tailscaled (subnet router for 10.0.3.0/24)             │   │
-│        • wireguard  (alternative VPN)                           │   │
-│        • registry:2 (registry.medc.local CNAME)                 │   │
 │        • binary host (binaries.medc.local CNAME)                │   │
 │        • iptables   (NAT to eth1, ingress DNAT)                 │   │
 │                                                                 │   │
@@ -137,9 +135,11 @@ Every hardcoded value moves into a single YAML config (`medc.yaml`).
   tailscaled), with a separate host tailscaled gated to superusers.
 - Clean ingress/egress termination; matches a real datacenter's
   router/edge-services VM pattern.
-- Registry + binary host on `registry.medc.local` and
-  `binaries.medc.local` (CNAMEs to the gateway) — air-gapped lab use
-  becomes trivial.
+- Binary host on `binaries.medc.local` (CNAME to the gateway) for
+  pre-staged installer artifacts that have to be present *before*
+  k8s exists. Container registry deployment is the k0s installer's
+  job — MEDC's dnsmasq is CNAME-extensible so an operator wires
+  `registry.<dns_domain>` to wherever the second repo deploys it.
 
 **What stays**
 - The *default* role layout (now 1 gateway + 1 mgmt + 1 master + 2

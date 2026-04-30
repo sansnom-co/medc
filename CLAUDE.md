@@ -34,7 +34,7 @@ v1 (Incus + gateway, fully designed but not yet implemented).
 
 | Axis | v0 — in-tree today (MVP) | v1 — designed, not yet coded |
 |---|---|---|
-| Runtime | Raw LXC + hand-rolled bridge/dnsmasq/iptables on host | Incus + a **gateway instance** holding dnsmasq/NAT/tailscale/registry |
+| Runtime | Raw LXC + hand-rolled bridge/dnsmasq/iptables on host | Incus + a **gateway instance** holding dnsmasq/NAT/tailscale/binary-host |
 | Topology | Hardcoded: 4 named containers, fixed IPs | YAML-driven; default = 5 instances (gateway + mgmt + master + 2 workers) |
 | Mgmt RAM | 4 GiB | **8 GiB** (k0rdent MCM memory pressure observed) |
 | Networking | `lxcbr0`, `lxc.local`, NAT on host | `medcbr0` (NAT off), `medc.local`, gateway terminates NAT and runs dnsmasq |
@@ -55,10 +55,10 @@ These survive the refactor. Do not silently change any of them.
 
 - **Default role layout (v1)**: 1 **gateway** + 1 mgmt + 1 k8s-control
   + 2 k8s-workers (= 5 instances). The gateway instance is the lab's
-  router/services VM (dnsmasq, tailscale subnet router, WireGuard,
-  registry, binary host, NAT, ingress). Exactly one gateway per
-  topology — multi-gateway HA is post-v1. Other roles' counts become
-  configurable; the *default roles* don't.
+  router/services VM (dnsmasq, tailscale subnet router, binary host,
+  NAT, ingress). Exactly one gateway per topology — multi-gateway HA
+  is post-v1. Other roles' counts become configurable; the *default
+  roles* don't.
 - **Default container names**: `medc-gateway`, `k0rdent-mgmt`,
   `k0s-child-master`, `k0s-child-worker1`, `k0s-child-worker2`.
 - **Default network**: bridge `medcbr0`, subnet `10.0.3.0/24`, lab
@@ -93,12 +93,14 @@ These survive the refactor. Do not silently change any of them.
   `destroy`. Schema changes bump `medc.version`. These are bake-in-now
   constraints because the future REST/MCP API depends on them.
 - **State artifact contract**: `medc apply` writes
-  `/etc/medc/state.json` (root:root 0644, atomic-rename) on every
-  success. This is **MEDC's interface to downstream repos** (the k0s
-  installer, k0rdent-deployment). Don't break the schema in
-  `docs/v1-design.md` §16 without bumping `medc_version`. Fields are
-  added at the end of objects; never renamed or removed within a
-  major version.
+  `/etc/medc/state.yaml` (root:root 0644, atomic-rename) on every
+  success. YAML to stay close to Incus's idiom (Incus profiles +
+  network configs are YAML); `medc state --output json` renders
+  JSON on demand for jq consumers. This is **MEDC's interface to
+  downstream repos** (the k0s installer, k0rdent-deployment). Don't
+  break the schema in `docs/v1-design.md` §16 without bumping
+  `medc_version`. Fields are added at the end of mappings; never
+  renamed or removed within a major version.
 
 ## Files and their roles
 
@@ -126,7 +128,7 @@ host; deleted at v1 ship):
 **Design docs** (definitive references for v1 work):
 
 - `docs/v1-design.md` — the v1 blueprint (architecture, YAML schema,
-  profiles, network, tailscale, registry, bring-up flow, CLI). Read
+  profiles, network, tailscale, binary host, bring-up flow, CLI). Read
   this before proposing v1 code or schema changes.
 - `docs/lxc-parameter-inventory.md` — every v0 parameter mapped to
   its v1 equivalent. Useful for "what does v0 do for X?" lookups.
@@ -187,9 +189,14 @@ this file.
   `docs/v1-design.md` §15.2).
 - **Tailscale model**: two tiers (host superuser + gateway subnet
   router). No per-container tailscaled.
-- **Registry default**: `registry:2` via Docker on the gateway.
-  Schema reserves `harbor` and `nexus` enum values; not implemented
-  in v1.
+- **Registry**: **not in v1**. Container registry deployment is the
+  k0s installer's (second repo's) job. MEDC provides a CNAME-
+  extensible dnsmasq so `registry.<dns_domain>` can be wired to
+  wherever the k0s installer deploys one. See `docs/v1-design.md`
+  §17.
+- **Binary host**: nginx in Docker on the gateway, serving
+  `binaries.<dns_domain>`. Stays in MEDC because it's needed
+  *before* k8s exists (pre-staging installer artifacts).
 - **Storage default**: btrfs strongly preferred. Bcachefs blocked
   on upstream Incus driver.
 - **CLI scriptability**: JSON output mandatory on read verbs;
@@ -200,21 +207,19 @@ this file.
   archive.
 - **Profile templating**: shell `envsubst`. Switch trigger if
   templating ever needs branching/loops — see `docs/v1-design.md`
-  §15.9.
+  §15.7.
 - **MAC autogeneration**: deterministic from IP last octet —
   `02:6d:65:64:63:XX` (which spells `02:medc:...:XX` in hex bytes).
   Persisted into the topology config on first apply if user omits
-  `mac`. See §15.9.
-- **Binary host server**: nginx in Docker on the gateway. Caddy was
-  the alternative. See §15.9.
+  `mac`. See §15.7.
 - **`egress_interface: auto`** resolves at apply time to the host's
   first default-route NIC (`ip -4 route show default | awk
   '/default/ {print $5; exit}'`). No default route → exit 4
-  (precondition). See §15.9.
+  (precondition). See §15.7.
 - **Validation rules**: `medc apply` refuses (exit 2) if the topology
   has no gateway, multiple gateways, gateway IP ≠ network.gateway_ip,
   IPs outside the network CIDR, IPs inside the DHCP range, or
-  duplicate IPs/MACs. See §15.9 and §10.1.
+  duplicate IPs/MACs. See §15.7 and §10.1.
 
 ## Roadmap (agent-flavoured)
 
@@ -246,12 +251,7 @@ answers before specific sub-features lock in:
   vs both. Working answer: both. Confirm at schema lock-in.
 - **15.3 Tailscale auth-key distribution** — env vars only in v1
   (working answer); secret-store integrations punted.
-- **15.6 Registry product evolution path** — when Harbor/Nexus
-  land, do they stay as docker blocks on the gateway or split into
-  a services instance? Working answer: stay on gateway.
-- **15.7 WireGuard config schema details** — peer shape, PSK
-  support. Working answer: road-warrior only in v1.
-- **15.8 Air-gapped binary host populate** — how operators stage
+- **15.6 Air-gapped binary host populate** — how operators stage
   files. Working answer: `incus file push` is the v1 mechanism;
   CLI shortcut and remote-source schema item are punts.
 
