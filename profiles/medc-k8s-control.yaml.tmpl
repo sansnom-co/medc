@@ -1,0 +1,22 @@
+# =============================================================================
+# medc-k8s-control.yaml.tmpl — Incus profile for k8s control-plane node
+# =============================================================================
+#
+# Composes on top of medc-base. v1 has no functional delta — the
+# k8s-required sysctls and base init are all in medc-base, which
+# applies to every instance.
+#
+# This profile exists to reserve a per-role surface for future tuning
+# (e.g. control-plane-only sysctls, separate memory defaults) without
+# restructuring the apply flow.
+#
+# Templating: shell `envsubst`. See `profiles/README.md`.
+# -----------------------------------------------------------------------------
+
+name: medc-k8s-control
+description: |
+  MEDC k8s control-plane profile — composes on top of medc-base.
+  v1 has no functional delta over base; reserved for future
+  control-plane-specific tuning if it emerges.
+
+config: {}

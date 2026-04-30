@@ -1,0 +1,122 @@
+# =============================================================================
+# medc-base.yaml.tmpl — common Incus profile applied to every MEDC instance
+# =============================================================================
+#
+# Templating: shell `envsubst`. See `profiles/README.md` for the full
+# convention. Variables consumed by this template (do not write them in
+# `${}` form inside this docstring — envsubst would substitute multi-
+# line values and break the comment block):
+#
+#   MEDC_AUTHORIZED_KEYS_INDENTED  (multi-line)
+#       Operator's SSH public keys, one per line, each line pre-indented
+#       to match the cloud-init users[].ssh_authorized_keys list
+#       indentation. `medc apply` is responsible for the indenting.
+#
+#   MEDC_INCUS_NETWORK
+#       Incus network name, e.g. medcbr0.
+#
+# Composition: every instance is created with
+#   incus init --profile medc-base --profile medc-<role> ...
+# Per-instance overrides (limits.cpu, limits.memory, volatile.eth0.hwaddr,
+# boot.autostart) live on the instance config, not in profiles.
+# -----------------------------------------------------------------------------
+
+name: medc-base
+description: |
+  MEDC base profile — applied to every instance regardless of role.
+  Provides cloud-init for OS init (packages, user, sshd, time, sysctls)
+  plus the lab-side eth0 NIC. Role-specific deltas (e.g. medc-gateway)
+  compose on top of this profile.
+
+config:
+  # Container privilege posture. Required for systemd correctness inside
+  # the container; the lab's hardening posture deliberately favours
+  # working-systemd-in-container over strict cap-drop. See
+  # docs/v1-design.md §3.5 and §15.7 (item 5 rationale).
+  security.privileged: "true"
+
+  # Boot management. Per-instance autostart can be overridden on the
+  # instance config; the global maintenance-mode toggle in medc.yaml
+  # forces autostart=false across every instance at apply time.
+  boot.autostart: "true"
+  boot.autostart.delay: "5"
+
+  # cloud-init payload — runs once at first boot inside the instance.
+  # Variable substitution happens *before* this YAML reaches Incus.
+  user.user-data: |
+    #cloud-config
+    package_update: true
+    package_upgrade: false
+    packages:
+      - openssh-server
+      - sudo
+      - chrony
+      - systemd-resolved
+      - curl
+      - ca-certificates
+
+    users:
+      - name: robot
+        groups: [sudo]
+        shell: /bin/bash
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        ssh_authorized_keys:
+${MEDC_AUTHORIZED_KEYS_INDENTED}
+
+    write_files:
+      # SSH-key auth only by default; password auth is opt-in via the
+      # `auth.password_auth: true` schema field, which causes `medc apply`
+      # to push a different sshd_config drop-in alongside this one.
+      - path: /etc/ssh/sshd_config.d/10-medc.conf
+        owner: root:root
+        permissions: "0644"
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+
+    runcmd:
+      # Time sync — kubernetes-grade clock matters for cert validity in
+      # the child cluster, and for any registry pulls from the binary host.
+      - systemctl enable systemd-resolved
+      - systemctl start  systemd-resolved
+      - systemctl enable chrony
+      - systemctl start  chrony
+      - chronyc makestep || true
+
+      # Swap off (kubernetes requirement). Comment swap entries in fstab
+      # so reboot doesn't bring it back.
+      - swapoff -a
+      - sed -i '/ swap / s/^/#/' /etc/fstab
+
+      # Sysctls. These migrate from v0's lxc.sysctl.* (which doesn't have
+      # a direct Incus equivalent — see docs/v1-design.md §6 and the
+      # parameter inventory §6 for full rationale on the move from
+      # supervisor-applied to first-boot-applied).
+      - sysctl -w net.bridge.bridge-nf-call-iptables=1
+      - sysctl -w net.bridge.bridge-nf-call-ip6tables=1
+      - sysctl -w net.ipv4.ip_forward=1
+      - sysctl -w fs.inotify.max_user_instances=524288
+      - sysctl -w fs.inotify.max_user_watches=524288
+
+      # Persist sysctls across reboot.
+      - |
+        cat > /etc/sysctl.d/99-medc.conf <<'SYSCTL'
+        net.bridge.bridge-nf-call-iptables=1
+        net.bridge.bridge-nf-call-ip6tables=1
+        net.ipv4.ip_forward=1
+        fs.inotify.max_user_instances=524288
+        fs.inotify.max_user_watches=524288
+        SYSCTL
+
+      # Restart sshd so the drop-in takes effect.
+      - systemctl restart ssh
+
+devices:
+  # Lab-side NIC. Every instance lands on the same Incus-managed bridge.
+  # Gateway adds eth1 (macvlan to host uplink) on top of this; the rest
+  # of the lab uses just eth0 and routes through the gateway.
+  eth0:
+    type: nic
+    network: ${MEDC_INCUS_NETWORK}
+    name: eth0
