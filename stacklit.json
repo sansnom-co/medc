@@ -1,7 +1,7 @@
 {
   "$schema": "https://stacklit.dev/schema/v1.json",
   "version": "1",
-  "generated_at": "2026-04-30T19:24:41Z",
+  "generated_at": "2026-04-30T19:36:54Z",
   "stacklit_version": "dev",
   "merkle_hash": "f5a406f9a42606d208ddb4ba8ed3e491515c495e4cae1dc20c1ee67223a1bfe2",
   "project": {
@@ -54,10 +54,18 @@
     "hot_files": [
       {
         "path": "stacklit.json",
-        "commits_90d": 4
+        "commits_90d": 5
       },
       {
         "path": "CLAUDE.md",
+        "commits_90d": 4
+      },
+      {
+        "path": "MEDC-overview.md",
+        "commits_90d": 3
+      },
+      {
+        "path": "docs/v1-design.md",
         "commits_90d": 3
       },
       {
@@ -65,11 +73,7 @@
         "commits_90d": 2
       },
       {
-        "path": "MEDC-overview.md",
-        "commits_90d": 2
-      },
-      {
-        "path": "docs/v1-design.md",
+        "path": "config/medc.yaml.example",
         "commits_90d": 2
       },
       {
@@ -82,10 +86,6 @@
       },
       {
         "path": "check-medc-health.sh",
-        "commits_90d": 1
-      },
-      {
-        "path": "config/medc.yaml.example",
         "commits_90d": 1
       },
       {
@@ -127,11 +127,11 @@
     ],
     "recent": [
       "CLAUDE.md",
+      "MEDC-overview.md",
       "config/medc.yaml.example",
       "docs/v1-design.md",
       "stacklit.json",
       "DEPENDENCIES.md",
-      "MEDC-overview.md",
       "docs/lxc-parameter-inventory.md",
       "AGENTS.md",
       "README.md",
@@ -141,13 +141,13 @@
       "AGENTS.md",
       "README.md",
       "check-medc-health.sh",
-      "config/medc.yaml.example",
       "crontab-entry.txt",
       "docs/lxc-parameter-inventory.md",
       "full-medc-setup.sh",
       "medc-k8s-powerup.sh",
       "medc-production-ready.sh",
-      "readme-startup.txt"
+      "readme-startup.txt",
+      "readme.txt"
     ]
   },
   "hints": {},
