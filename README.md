@@ -11,13 +11,14 @@ repo is the host-platform layer only.
 
 ## Status
 
-- **Current (v0):** LXC-based MVP. Four fixed containers on `10.0.3.0/24`:
-  one management node + one k0s master + two k0s workers. All infra values
-  hardcoded in shell.
-- **In flight:** rebrand to MEDC (this repo), rewrite docs, remove dead refs.
-- **Next:** parameterize topology (node count, IPs, network CIDR, hostnames,
-  DNS domain, ingress/egress routes, credentials), then migrate from raw
-  LXC to **Incus**. See `MEDC-overview.md` for the full refactor roadmap.
+Between **v0** (LXC MVP, in-tree, working) and **v1** (Incus + gateway,
+designed, implementation underway). v0 LXC scripts still ship for now;
+they get deleted in the final v1 PR.
+
+For the current PR pipeline, open design items, and what's out of scope,
+see [`TODO.md`](TODO.md). For the v1 architecture and rationale see
+[`MEDC-overview.md`](MEDC-overview.md). For the full v1 blueprint see
+[`docs/v1-design.md`](docs/v1-design.md).
 
 ## Default topology (MVP)
 

@@ -21,10 +21,15 @@ mirrors a real customer deployment.
 k0rdent installation itself is a *post-MEDC* step and lives outside
 this repo. MEDC is only the host-platform layer.
 
+**Current state at a glance: `TODO.md` at the repo root** —
+hand-maintained, updated when PRs open/merge or design items
+transition. Read that first to know what's done, in flight, and
+pending.
+
 User-facing docs: `README.md` (landing) and `MEDC-overview.md`
 (architecture + roadmap + known gaps). Design docs:
 `docs/v1-design.md` (blueprint for the Incus + gateway implementation,
-≈1450 lines, definitive) and `docs/lxc-parameter-inventory.md` (v0
+≈1500 lines, definitive) and `docs/lxc-parameter-inventory.md` (v0
 parameter snapshot, retired at v1 ship). Start there for intent.
 
 ## Where we are
@@ -125,14 +130,19 @@ host; deleted at v1 ship):
   systemd unit ships invoking it — known v0 gap (see
   `MEDC-overview.md` §5.3); fixed wholesale in v1.
 
-**Design docs** (definitive references for v1 work):
+**Status + design docs** (definitive references):
 
+- `TODO.md` — repo-root status snapshot: done / in flight / pending
+  PRs, open design items, out-of-scope list, cross-repo follow-ons.
+  Hand-maintained at PR/milestone boundaries. **Read this first for
+  current state.**
 - `docs/v1-design.md` — the v1 blueprint (architecture, YAML schema,
   profiles, network, tailscale, binary host, bring-up flow, CLI). Read
   this before proposing v1 code or schema changes.
 - `docs/lxc-parameter-inventory.md` — every v0 parameter mapped to
   its v1 equivalent. Useful for "what does v0 do for X?" lookups.
   Retired at v1 ship.
+- `config/medc.yaml.example` — annotated reference YAML.
 
 **External research** (outside the repo, but relevant):
 
