@@ -1,0 +1,244 @@
+# =============================================================================
+# medc-gateway.yaml.tmpl — Incus profile for the gateway instance
+# =============================================================================
+#
+# The gateway is the lab's edge VM. It runs:
+#   • dnsmasq      — DHCP + DNS for the lab subnet
+#   • tailscaled   — subnet router for ${MEDC_LAB_SUBNET} (app-admin tailnet)
+#   • iptables NAT — egress out eth1, ingress DNAT inbound on eth1
+#   • nginx (Docker) — static binary host at binaries.<dns_domain>
+#
+# Templating: shell `envsubst`. See `profiles/README.md` for the full
+# convention.
+#
+# Variables consumed by this template (do not write them in `${}` form
+# inside this docstring — envsubst would substitute multi-line values
+# and break the comment block):
+#
+#   MEDC_AUTHORIZED_KEYS_INDENTED
+#       Operator SSH keys, one per line, pre-indented for the YAML
+#       location they're substituted into.
+#
+#   MEDC_INCUS_NETWORK
+#       Incus network name (e.g. medcbr0).
+#
+#   MEDC_GATEWAY_IP_CIDR
+#       Gateway's static lab-side IP in CIDR form (e.g. "10.0.3.5/24").
+#
+#   MEDC_LAB_SUBNET
+#       Lab subnet in CIDR form (e.g. "10.0.3.0/24"). Used as the
+#       tailscale subnet route advertisement.
+#
+#   MEDC_GATEWAY_HOSTNAME
+#       Tailscale --hostname value (e.g. "medc-gateway").
+#
+#   MEDC_TS_GATEWAY_AUTH_KEY
+#       Tailscale preauth key for the gateway's tailscaled. Sourced from
+#       the env var named in connectivity.tailscale.gateway.auth_key_env.
+#
+#   MEDC_EGRESS_INTERFACE
+#       Host NIC pulled into the gateway as eth1 (macvlan parent).
+#       Resolved at apply time when network.egress_interface is "auto".
+#
+#   MEDC_DNSMASQ_CONFIG_INDENTED  (multi-line)
+#       Body of /etc/medc/dnsmasq.conf, each line pre-indented for the
+#       cloud-init `write_files[].content: |` block scalar. `medc apply`
+#       generates this from the topology + infra.cnames.
+#
+#   MEDC_IPTABLES_V4_INDENTED  (multi-line)
+#       Body of /etc/medc/iptables.rules.v4, pre-indented. NAT
+#       MASQUERADE out eth1 + FORWARD rules + ingress DNAT entries.
+#
+#   MEDC_BINARIES_PATH
+#       Filesystem path where the binary host serves from
+#       (default /var/lib/medc/binaries).
+#
+#   MEDC_BINARIES_DATA_SIZE
+#       Incus disk device size for the binary host volume
+#       (default 10GiB).
+#
+# A note on user.user-data composition:
+# Incus profile composition does NOT merge the `user.user-data` string —
+# when multiple profiles set it, the last profile in the list wins.
+# So this profile carries a *complete* cloud-init (base init + gateway
+# additions), not a delta. The duplication with medc-base.yaml.tmpl is
+# deliberate and documented; profile content is generated from templates
+# by `medc apply`, the operator never hand-edits these.
+# -----------------------------------------------------------------------------
+
+name: medc-gateway
+description: |
+  MEDC gateway profile — the lab's router/services VM. Hosts dnsmasq,
+  tailscaled (subnet router for ${MEDC_LAB_SUBNET}), iptables NAT,
+  ingress DNAT, and an nginx binary host. Two NICs: eth0 on the lab
+  bridge, eth1 macvlan'd to the host's uplink.
+
+config:
+  security.privileged: "true"
+
+  # Gateway boots first; no startup delay.
+  boot.autostart: "true"
+  boot.autostart.delay: "0"
+
+  user.user-data: |
+    #cloud-config
+    package_update: true
+    package_upgrade: false
+    packages:
+      # base
+      - openssh-server
+      - sudo
+      - chrony
+      - systemd-resolved
+      - curl
+      - ca-certificates
+      # gateway-specific
+      - dnsmasq
+      - iptables
+      - iptables-persistent
+      - tailscale
+      - docker.io
+
+    users:
+      - name: robot
+        groups: [sudo]
+        shell: /bin/bash
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        ssh_authorized_keys:
+${MEDC_AUTHORIZED_KEYS_INDENTED}
+
+    write_files:
+      # SSH posture (same as base).
+      - path: /etc/ssh/sshd_config.d/10-medc.conf
+        owner: root:root
+        permissions: "0644"
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+
+      # Static IP on the lab-side NIC. Gateway can't DHCP from itself —
+      # it IS the DHCP server.
+      - path: /etc/systemd/network/10-eth0.network
+        owner: root:root
+        permissions: "0644"
+        content: |
+          [Match]
+          Name=eth0
+          [Network]
+          Address=${MEDC_GATEWAY_IP_CIDR}
+          # No Gateway= here — we ARE the lab's gateway.
+
+      # eth1 (uplink) gets DHCP from the host's upstream network.
+      - path: /etc/systemd/network/10-eth1.network
+        owner: root:root
+        permissions: "0644"
+        content: |
+          [Match]
+          Name=eth1
+          [Network]
+          DHCP=ipv4
+
+      # IPv4 forwarding for the routing role (also persists across reboot).
+      - path: /etc/sysctl.d/99-medc-gateway.conf
+        owner: root:root
+        permissions: "0644"
+        content: |
+          net.ipv4.ip_forward=1
+          net.ipv4.conf.all.forwarding=1
+
+      # dnsmasq — lab DHCP + DNS. Generated from topology + infra.cnames
+      # by `medc apply`.
+      - path: /etc/medc/dnsmasq.conf
+        owner: root:root
+        permissions: "0644"
+        content: |
+${MEDC_DNSMASQ_CONFIG_INDENTED}
+
+      # iptables — NAT MASQUERADE out eth1, FORWARD rules between lab
+      # and uplink, ingress DNAT entries from the connectivity.ingress
+      # schema list. Generated by `medc apply`.
+      - path: /etc/medc/iptables.rules.v4
+        owner: root:root
+        permissions: "0644"
+        content: |
+${MEDC_IPTABLES_V4_INDENTED}
+
+    runcmd:
+      # Time sync (base).
+      - systemctl enable systemd-resolved
+      - systemctl start  systemd-resolved
+      - systemctl enable chrony
+      - systemctl start  chrony
+      - chronyc makestep || true
+
+      # Swap off (base).
+      - swapoff -a
+      - sed -i '/ swap / s/^/#/' /etc/fstab
+
+      # Apply base sysctls + gateway-specific forwarding sysctls.
+      - sysctl --system
+
+      # Bring up the static IPs on eth0 and DHCP on eth1.
+      - systemctl enable systemd-networkd
+      - systemctl restart systemd-networkd
+
+      # Restore + persist iptables rules.
+      - iptables-restore < /etc/medc/iptables.rules.v4
+      - netfilter-persistent save
+      - systemctl enable netfilter-persistent
+
+      # dnsmasq — the lab's DHCP + DNS server.
+      - systemctl enable dnsmasq
+      - systemctl restart dnsmasq
+
+      # Tailscale: bring the gateway onto the app-admin tailnet,
+      # advertise the lab subnet as a route. Subnet route still needs
+      # tailnet-side approval (or autoApprovers; see
+      # docs/v1-design.md §7.3).
+      - |
+        tailscale up \
+          --authkey="${MEDC_TS_GATEWAY_AUTH_KEY}" \
+          --advertise-routes="${MEDC_LAB_SUBNET}" \
+          --advertise-tags=tag:medc-app-admin \
+          --hostname="${MEDC_GATEWAY_HOSTNAME}"
+
+      # Binary host — nginx in Docker, serving ${MEDC_BINARIES_PATH}
+      # read-only at binaries.<dns_domain>.
+      - mkdir -p ${MEDC_BINARIES_PATH}
+      - |
+        docker run -d \
+          --name binaries \
+          --restart=always \
+          -p 80:80 \
+          -v ${MEDC_BINARIES_PATH}:/usr/share/nginx/html:ro \
+          nginx:stable
+
+      # Restart sshd so the drop-in takes effect.
+      - systemctl restart ssh
+
+devices:
+  # Lab-side NIC (already declared in medc-base; redeclared here
+  # explicitly because Incus profile composition merges device entries
+  # by name and we want both to agree).
+  eth0:
+    type: nic
+    network: ${MEDC_INCUS_NETWORK}
+    name: eth0
+
+  # Uplink NIC. macvlan lets the gateway have its own MAC on the host's
+  # primary interface without bridging — gateway looks like a separate
+  # L2 endpoint to upstream switches/firewalls.
+  eth1:
+    type: nic
+    nictype: macvlan
+    parent: ${MEDC_EGRESS_INTERFACE}
+    name: eth1
+
+  # Persistent volume for the binary host. Backed by the medc storage
+  # pool; survives gateway recreate.
+  binaries-data:
+    type: disk
+    pool: medc
+    path: ${MEDC_BINARIES_PATH}
+    size: ${MEDC_BINARIES_DATA_SIZE}

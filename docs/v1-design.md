@@ -60,8 +60,6 @@ v1 looks like, not **when** each line of code lands.
 │   │  gateway          (.5  on medcbr0 = eth0)  │ ──────  eth1  ───┘   │
 │   │  • dnsmasq        (DHCP + DNS for lab)     │                      │
 │   │  • tailscaled     (subnet router 10.0.3/24)│                      │
-│   │  • wireguard      (alternative VPN)        │                      │
-│   │  • registry:2     (registry.<domain>)      │                      │
 │   │  • binary host    (binaries.<domain>)      │                      │
 │   │  • iptables NAT   (eth1 ← MASQUERADE)      │                      │
 │   │  • iptables ingress forwards               │                      │
@@ -89,12 +87,12 @@ Incus's job** — the gateway instance terminates it. The bridge's
 
 **What the gateway owns** (the new fifth instance): DHCP + DNS for the
 lab subnet (dnsmasq), L3 routing/NAT to the host's uplink NIC, the
-application-admin tailscaled (subnet router for 10.0.3.0/24), an
-optional WireGuard endpoint as an alternative VPN, the container
-registry, and a static-binary host. CNAMEs in the gateway's dnsmasq
-let `registry.<domain>` and `binaries.<domain>` resolve to the
-gateway's lab-side IP — clients see distinct hostnames, the gateway
-is one process.
+application-admin tailscaled (subnet router for 10.0.3.0/24), and a
+static-binary host. CNAMEs in the gateway's dnsmasq let
+`binaries.<domain>` (and any operator-added aliases) resolve to the
+gateway's lab-side IP. The container registry is **not** the
+gateway's job — see §17 for the rationale (k0s installer's
+responsibility).
 
 **What the host owns:** `incusd`, the host-tier tailscaled (superuser
 access for host troubleshooting), and the storage pool. Nothing else
@@ -104,7 +102,7 @@ router.
 **What MEDC owns end-to-end:** the YAML config that drives both Incus
 and the gateway's services, the `medc` CLI, and the gateway's
 profile/cloud-init payload that materializes dnsmasq + iptables +
-tailscaled + WG + registry in one place.
+tailscaled + binary host in one place.
 
 **What's gone vs. v0:** the hand-rolled `/etc/default/lxc-net`,
 `/usr/local/bin/create-k8s-lxc.sh`, `/usr/local/bin/test-lxc-network.sh`,
@@ -135,7 +133,7 @@ medc:
     ipv4: 10.0.3.0/24             # lab subnet (gateway-routed, NOT incus-NATed)
     bridge_address: 10.0.3.1      # the bridge's host-side IP (unused as gateway by lab)
     gateway_ip: 10.0.3.5          # the gateway INSTANCE's lab-side IP — clients use this as default route
-    dns_domain: medc.local        # also used for the registry/binary CNAMEs
+    dns_domain: medc.local        # also the suffix for infra.cnames (binaries, etc.)
     dhcp_range: 10.0.3.100-10.0.3.199
     egress_interface: auto        # passed into the gateway as eth1 — "auto" | <ifname>
 
@@ -201,7 +199,7 @@ medc:
     password_auth: false          # default off; flip on for lab/demo
     permit_root_login: false      # default off
 
-  connectivity:                   # §3.7 — proxy, tailscale, wireguard, ingress
+  connectivity:                   # §3.7 — proxy, tailscale, ingress
     http_proxy: ""                # empty = unset
     https_proxy: ""
     no_proxy: ""
@@ -218,27 +216,15 @@ medc:
         advertise_routes: [10.0.3.0/24]
         auth_key_env: MEDC_TS_GATEWAY_AUTH_KEY
       remote_clusters: []         # future-proof; empty in v1
-    wireguard:                    # optional alternative VPN, terminates on gateway
-      enabled: false
-      listen_port: 51820
-      public_key: ""              # generated on first apply if empty; persisted
-      peers: []                   # list of {name, public_key, allowed_ips}
     ingress: []                   # list of {host_port, target, target_port, protocol}
 
   infra:                          # §3.X — services hosted on the gateway
-    registry:
-      enabled: true
-      product: registry           # "registry" (registry:2) | "harbor" | "nexus"
-      port: 5000
-      data_volume_size: 20GiB
-      tls: false                  # plain HTTP for lab; flip on with cert source for realism
     binary_host:
       enabled: true
       port: 80
       root: /var/lib/medc/binaries
-    cnames:                       # served by gateway dnsmasq
-      - { alias: registry, target: medc-gateway }
-      - { alias: binaries, target: medc-gateway }
+    cnames:                       # served by gateway dnsmasq;
+      - { alias: binaries, target: medc-gateway }   # operator-extensible
 
   storage:                        # §3.8
     pool_driver: btrfs            # btrfs | zfs | dir
@@ -261,7 +247,7 @@ profile (which renders the dnsmasq config + iptables NAT rules).
 | `ipv4` | yes | — | CIDR, e.g. `10.0.3.0/24` |
 | `bridge_address` | no | first usable in CIDR | the bridge interface's host-side IP. Not the lab gateway. |
 | `gateway_ip` | yes | — | the gateway *instance's* lab-side IP. This is the default route for every other instance. |
-| `dns_domain` | yes | `medc.local` | dnsmasq `domain=`; also the suffix for CNAMEs (registry, binaries) |
+| `dns_domain` | yes | `medc.local` | dnsmasq `domain=`; also the suffix for `infra.cnames` entries |
 | `dhcp_range` | yes | — | range for unreserved clients; reserved instances get their pinned IP via `dhcp-host=` |
 | `egress_interface` | no | `auto` | host NIC pulled into the gateway as `eth1`. `auto` = host default route. Override for cloud VPSes (`enp1s0`, etc.) |
 
@@ -326,9 +312,9 @@ both to `true` and adding a password — opt-in, not the default.
 
 ### 3.7 `connectivity` block
 
-See §7 for the tailscale design, §7.5 for the WireGuard alternative,
-and §8 for the ingress design. Proxy variables are propagated into
-apt config and per-instance environment via cloud-init when set.
+See §7 for the tailscale design and §8 for the ingress design.
+Proxy variables are propagated into apt config and per-instance
+environment via cloud-init when set.
 
 **Tailscale tier shape:**
 
@@ -343,38 +329,30 @@ apt config and per-instance environment via cloud-init when set.
   has been retracted in favor of the subnet-router model.
 - `tailscale.remote_clusters` — future, see §7.6.
 
-**WireGuard:** alternative VPN, terminates on the gateway. Useful
-when the operator's environment doesn't allow tailscale (specific
-egress firewall rules, regulatory) or when peering with an existing
-WG network. Disabled by default. See §7.5.
+**WireGuard:** not in v1. Tailscale covers the inbound-VPN case for
+both Scenario A and Scenario B. WG was contemplated in earlier
+drafts but no concrete operator ask exists. See §17.
 
 ### 3.8 `infra` block
 
-The new top-level `infra` block describes services hosted on the
-gateway instance. v1 ships `registry`, `binary_host`, and CNAMEs.
-Future additions (NTP server, syslog collector, monitoring scrape
-target) slot in here.
+The top-level `infra` block describes services hosted on the
+gateway instance. v1 ships `binary_host` and operator-extensible
+CNAMEs. Future additions (NTP server, syslog collector, monitoring
+scrape target) slot in here.
 
-**`infra.registry`:** a container registry served by the gateway,
-addressed via `registry.<dns_domain>` (a CNAME to the gateway). v1
-defaults to **registry:2** (the OCI Distribution registry, plain).
-The schema's `product` enum reserves `harbor` and `nexus` for
-operators wanting fuller features; v1 ships only `registry` and
-emits a "not yet implemented" error for the others.
+A **container registry is explicitly NOT in v1** — that's the k0s
+installer's job (the second repo). Whatever registry the operator's
+deployment needs (registry:2, Harbor, Nexus, an external one) is
+deployed onto the mgmt k8s cluster post-MEDC, by the layer that
+needs it. MEDC just leaves a clean lab. See §17.
 
-| Field | Default | Notes |
-|---|---|---|
-| `enabled` | `true` | Disable to remove the registry container from the gateway profile |
-| `product` | `registry` | `registry` only in v1; `harbor`/`nexus` reserved |
-| `port` | `5000` | Listen port on the gateway's lab-side IP |
-| `data_volume_size` | `20GiB` | Incus disk device on the gateway (btrfs sub-volume on btrfs pools) |
-| `tls` | `false` | Plain HTTP for lab default. Flip on with cert source for realism. (TLS source not in v1 schema; future addition.) |
-
-**`infra.binary_host`:** static-file server (caddy or nginx — TBD
-implementation detail) at `binaries.<dns_domain>`. Hosts k0s/k0rdent
-installer artifacts, kubectl/helm CLIs, and any tarballs the lab
-needs. Air-gapped lab use case: pre-populate `root` once, then
+**`infra.binary_host`:** nginx (in Docker) on the gateway, serving
+static files at `binaries.<dns_domain>`. Hosts k0s/k0rdent installer
+artifacts, kubectl/helm CLIs, and any tarballs the lab needs *before*
+k8s exists. Air-gapped lab use case: pre-populate `root` once, then
 `binaries.<dns_domain>` becomes the lab's only outbound dependency.
+Crucially it's reachable from any lab instance the moment the gateway
+is up — no chicken-and-egg with k8s/registry.
 
 | Field | Default | Notes |
 |---|---|---|
@@ -384,9 +362,10 @@ needs. Air-gapped lab use case: pre-populate `root` once, then
 
 **`infra.cnames`:** dnsmasq CNAME entries served by the gateway.
 v1 emits one per entry: `cname=<alias>.<dns_domain>,<target>.<dns_domain>`.
-Default seed includes `registry → medc-gateway` and
-`binaries → medc-gateway` so a default-config lab has working
-registry/binary URLs from day one.
+Default seed includes only `binaries → medc-gateway`. Operators can
+add entries for any other DNS aliases they want the lab to resolve
+(including a future `registry → <wherever>` once the k0s installer
+deploys one).
 
 ### 3.9 `storage` block
 
@@ -394,10 +373,10 @@ Default `pool_driver: btrfs` for snapshot speed (instant CoW vs.
 the v0 `tar -czf` of a snap dir). `dir` is the safe fallback for
 hosts without btrfs/zfs. See §9.
 
-The gateway instance gets an additional Incus disk device per
-`infra.registry.data_volume_size` and per `infra.binary_host` —
-allocated from the same pool. Sizing is operator-tunable; defaults
-are conservative (20 GiB registry, no separate binary-host quota).
+The gateway instance gets an additional Incus disk device for
+`infra.binary_host` — allocated from the same pool. Sizing is
+operator-tunable; default is no separate quota (the binary host
+shares the gateway's rootfs allocation).
 
 ### 3.10 `operator` block
 
@@ -414,8 +393,8 @@ ships four:
 
 - `medc-base` — common config every instance gets.
 - `medc-gateway` — the lab's router/services VM (dnsmasq, tailscaled
-  subnet router, WireGuard, registry, binary host, NAT iptables, dual
-  NIC). One per topology.
+  subnet router, binary host, NAT iptables, dual NIC). One per
+  topology.
 - `medc-mgmt` — minimal delta over base; default route is the gateway.
 - `medc-k8s-control` — minimal delta over base.
 - `medc-k8s-worker` — minimal delta over base.
@@ -486,7 +465,7 @@ focuses on the user-data shape; concrete templating lives in
 
 ```yaml
 name: medc-gateway
-description: MEDC gateway profile — dnsmasq + tailscaled + registry + NAT
+description: MEDC gateway profile — dnsmasq + tailscaled + binary host + NAT
 config:
   security.privileged: "true"
   boot.autostart: "true"
@@ -504,8 +483,7 @@ config:
       - iptables
       - iptables-persistent
       - tailscale
-      - wireguard
-      - docker.io                    # for registry:2 container
+      - docker.io                    # for the nginx binary-host container
     write_files:
       - path: /etc/medc/dnsmasq.conf
         content: ${MEDC_DNSMASQ_CONFIG}
@@ -531,10 +509,6 @@ config:
                      --advertise-routes=10.0.3.0/24
                      --advertise-tags=tag:medc-app-admin
                      --hostname=medc-gateway
-      - docker run -d --name registry --restart=always
-                   -p 5000:5000
-                   -v /var/lib/medc/registry:/var/lib/registry
-                   registry:2
       - mkdir -p /var/lib/medc/binaries
       - docker run -d --name binaries --restart=always
                    -p 80:80
@@ -550,11 +524,6 @@ devices:
     nictype: macvlan
     parent: ${MEDC_EGRESS_INTERFACE}
     name: eth1
-  registry-data:                     # persistent registry volume
-    type: disk
-    pool: medc
-    path: /var/lib/medc/registry
-    size: 20GiB
   binaries-data:                     # persistent binary host volume
     type: disk
     pool: medc
@@ -564,13 +533,11 @@ devices:
 
 Notes on the sketch:
 
-- **Why docker for the registry?** Pragmatic: the upstream `registry:2`
-  Distribution is shipped as a container, not as a Debian package.
-  Docker is the lightest runtime that runs it inside the gateway with
-  zero compose. `podman` is a viable swap; just an implementation
-  detail, not a design call. The registry-as-system-package option
-  (Sonatype Nexus from `apt`) is what the schema's `product: nexus`
-  enum value will eventually exercise.
+- **Why docker for the binary host?** nginx as the static-file server
+  is a Debian package, but running it in a container keeps the
+  gateway's host filesystem untouched and lets us pin a specific
+  image. `podman` is a viable swap; just an implementation detail,
+  not a design call.
 - **`eth1` `nictype: macvlan`** lets the gateway have its own MAC on
   the host's uplink without bridging — the gateway looks like a
   separate L2 endpoint to upstream switches/firewalls. Suits both
@@ -670,9 +637,9 @@ host-record=k0s-child-master.medc.local,k0s-child-master,10.0.3.20
 host-record=k0s-child-worker1.medc.local,k0s-child-worker1,10.0.3.21
 host-record=k0s-child-worker2.medc.local,k0s-child-worker2,10.0.3.22
 
-# CNAMEs (from infra.cnames; gateway by default also appears as registry/binaries)
-cname=registry.medc.local,medc-gateway.medc.local
+# CNAMEs (from infra.cnames; default seed includes only binaries)
 cname=binaries.medc.local,medc-gateway.medc.local
+# operators add more here, e.g. cname=registry.medc.local,<wherever-the-k0s-installer-deploys-registry>
 ```
 
 dnsmasq runs as a normal `dnsmasq.service` (the package's stock
@@ -887,26 +854,7 @@ The gateway is a meaningful security boundary, but it is not a
 firewall against a compromised host. Treat it as the lab's perimeter,
 not the operator's perimeter.
 
-### 7.5 WireGuard alternative
-
-`connectivity.wireguard` is an optional alternative VPN, also
-terminating on the gateway. Reasons to enable:
-
-- The operator's environment forbids tailscale (egress-rule
-  whitelisting only, regulatory, or company policy bans third-party
-  coordination services).
-- Peering MEDC into an existing WireGuard mesh.
-
-When `wireguard.enabled: true`, the `medc-gateway` profile's
-cloud-init installs `wireguard` (apt) and writes
-`/etc/wireguard/wg0.conf` with the listen port + peer list from the
-schema. `wg-quick@wg0` is enabled.
-
-WireGuard and tailscale can coexist on the gateway — they don't
-collide on ports, and they advertise different routes. v1 ships
-with tailscale enabled and WireGuard disabled by default.
-
-### 7.6 Remote-clusters block (future)
+### 7.5 Remote-clusters block (future)
 
 `connectivity.tailscale.remote_clusters` is a list, empty in v1 ship,
 shape reserved:
@@ -959,41 +907,17 @@ subnet route.
 
 ---
 
-## 8.5 Registry and binary host (gateway-resident services)
+## 8.5 Binary host (gateway-resident service)
 
-These are the §3.8 `infra` block in concrete form.
+The §3.8 `infra.binary_host` block in concrete form. Container
+registry is **not** in MEDC v1 — see §17 for the rationale (it's
+the k0s installer's job).
 
-### 8.5.1 Container registry
+### 8.5.1 Binary host
 
-The default `infra.registry.product: registry` runs the upstream
-**OCI Distribution registry** (image `registry:2`) inside the
-gateway via Docker, listening on `0.0.0.0:5000` (or whatever
-`infra.registry.port` sets). Storage backed by an Incus disk device
-(`registry-data` in §4.2's profile sketch) sized per
-`infra.registry.data_volume_size`.
-
-Addressed by clients as `registry.medc.local:5000` (the dnsmasq
-CNAME from §3.8 and §5.2 maps `registry.medc.local` to
-`medc-gateway.medc.local`, which resolves to the gateway's lab IP).
-
-TLS is off by default in v1. Clients pulling from
-`registry.medc.local:5000` need to opt into HTTP via
-`/etc/docker/daemon.json` `insecure-registries` (or k0s/containerd
-equivalent). For lab use this is fine; for realism, flipping
-`infra.registry.tls: true` is a future schema item that pulls a
-cert source — not in v1 ship.
-
-`infra.registry.product: harbor` and `nexus` are reserved enum
-values; v1 implements only `registry` and emits a clear
-not-implemented error for the others. Adding Harbor or Nexus is
-purely additive (drop new docker-compose / cloud-init blocks into
-the gateway profile) — not a breaking change.
-
-### 8.5.2 Binary host
-
-A static-file HTTP server on the gateway (default: nginx running in
-a docker container, mount `/var/lib/medc/binaries` read-only at
-`/usr/share/nginx/html`). Listening on `0.0.0.0:80` (or
+A static-file HTTP server on the gateway: nginx running in a Docker
+container, mounting `/var/lib/medc/binaries` read-only at
+`/usr/share/nginx/html`. Listens on `0.0.0.0:80` (or
 `infra.binary_host.port`). Addressed by clients as
 `http://binaries.medc.local`.
 
@@ -1002,26 +926,23 @@ Use cases:
 - Custom builds operators want every lab instance to pull during
   bootstrap.
 - Air-gapped lab pattern: pre-populate `infra.binary_host.root` once,
-  then `binaries.medc.local` becomes the lab's only outbound
-  dependency. (The registry covers OCI; the binary host covers
-  everything else.)
+  then `binaries.medc.local` is the lab's only outbound dependency
+  for non-OCI artifacts. (Once the k0s installer deploys a registry,
+  *that* covers OCI; until then, the binary host is what's available.)
 
 Operators populate the binaries directory by `incus file push` to
 the gateway, by syncing into the underlying volume from the host,
 or (eventually) via a `medc binaries push` CLI shortcut — that's
 an open ergonomic item, not a v1 blocker.
 
-### 8.5.3 Same host, different DNS names
+### 8.5.2 DNS via CNAME
 
-Per the user's call: `registry.medc.local` and `binaries.medc.local`
-are CNAMEs to `medc-gateway.medc.local`. They're separate ports on
-the same instance, addressed by separate hostnames so clients see
-clean URLs and operators can swap the registry product or the binary
-server without breaking the URL contract.
-
-The schema lists these CNAMEs explicitly (`infra.cnames`) rather
-than hardcoding them, so an operator with a real DNS infrastructure
-can omit them and provide the names externally.
+`binaries.medc.local` is a CNAME to `medc-gateway.medc.local`. The
+schema lists CNAMEs in `infra.cnames` (default seed: just
+`binaries`), so an operator with a real DNS infrastructure can omit
+the default and provide the names externally — and add others
+(e.g. `registry.medc.local` once the k0s installer deploys a
+registry somewhere) without touching MEDC.
 
 ---
 
@@ -1116,15 +1037,15 @@ sudo medc verify
 2. **Render** Incus profiles (`medc-base`, `medc-gateway`,
    `medc-<role>`) from the YAML — including the gateway's full
    cloud-init payload (dnsmasq config, iptables rules, tailscale
-   auth, registry/binaries docker run lines, CNAMEs). Push via
+   auth, binary-host docker run line, CNAMEs). Push via
    `incus profile`.
 3. **Ensure storage pool** exists (`incus storage create` if not).
 4. **Ensure network** exists with NAT off, DHCP off, DNS off
    (§5.1). `incus network create` or `incus network edit`.
 5. **Launch the gateway first.** `incus init` with profiles + MAC
    + memory + CPU; attach `eth1` macvlan device on the host's
-   egress NIC; attach the `registry-data` and `binaries-data`
-   disk devices; `incus start medc-gateway`.
+   egress NIC; attach the `binaries-data` disk device;
+   `incus start medc-gateway`.
 6. **Wait for the gateway to be ready.** Two gates:
    - `cloud-init status --wait` returns inside the gateway
      (signals `runcmd` finished).
@@ -1167,7 +1088,7 @@ storage_pools:
   - name: medc
     driver: btrfs
     config:
-      size: 100GiB                   # bumped from 50: registry + binaries + 5 instances
+      size: 100GiB                   # 5 instances + binary host volume + headroom
 networks: []                          # MEDC owns this; not init's job
 profiles: []                          # MEDC owns these; not init's job
 ```
@@ -1237,7 +1158,7 @@ defaulting to `/etc/medc/medc.yaml`.
 │   └── medc.yaml.example             # commented reference config
 ├── profiles/
 │   ├── medc-base.yaml.tmpl
-│   ├── medc-gateway.yaml.tmpl        # the fat one (dnsmasq + ts + WG + registry + NAT)
+│   ├── medc-gateway.yaml.tmpl        # the fat one (dnsmasq + ts + binary host + NAT)
 │   ├── medc-mgmt.yaml.tmpl
 │   ├── medc-k8s-control.yaml.tmpl
 │   └── medc-k8s-worker.yaml.tmpl
@@ -1384,44 +1305,7 @@ gets documented in `docs/operator-runbook.md` (or a new
 `docs/agent-surface.md` if it grows enough), versioned alongside
 `medc.version`.
 
-### 15.6 Registry product evolution path
-
-v1 ships only `infra.registry.product: registry` (registry:2). The
-`harbor` and `nexus` enum values are reserved.
-
-Open: when the user asks for Harbor or Nexus, do we ship them as:
-- (a) Additional `docker run` blocks in the gateway profile —
-  simple but bloats the gateway as features grow.
-- (b) A separate "services" instance role (split off from gateway) —
-  cleaner but reintroduces the multi-instance complexity we just
-  collapsed.
-- (c) An external service the operator already runs — MEDC just
-  points at it via the schema. The leanest option.
-
-**Working answer:** (a) for `harbor` and `nexus` if/when they land,
-keep the gateway "just keep it simple" framing the user articulated.
-Revisit if gateway grows past one disk's worth of services.
-
-### 15.7 WireGuard config schema details
-
-§3.7's `wireguard` block has `peers: []` as a flat list. The peer
-shape isn't fully specified in v1:
-
-```yaml
-peers:
-  - name: alice-laptop
-    public_key: ...
-    allowed_ips: [10.0.3.0/24]
-    persistent_keepalive: 25      # optional
-```
-
-Open: do we want PSK-per-peer support, endpoint-per-peer for
-mesh setups, or stick to the simple road-warrior model? **Working
-answer:** road-warrior only in v1; mesh is future. Document the
-peer shape concretely once we've stress-tested it on a real
-gateway.
-
-### 15.8 Air-gapped binary host populate workflow
+### 15.6 Air-gapped binary host populate workflow
 
 `infra.binary_host.root` is a directory inside the gateway. v1 doesn't
 specify how operators put files there. Options:
@@ -1437,9 +1321,245 @@ specify how operators put files there. Options:
 ergonomic add-on; punt. (c) is the air-gapped operator's wishlist
 item; punt with a note that the schema will accommodate it later.
 
+### 15.7 Implementation-blocker resolutions (locked in PR1)
+
+Five items the design left open and which were resolved during PR1
+planning. Locked unless evidence to revisit emerges.
+
+1. **Profile templating language: shell `envsubst`.**
+   Zero dependency, matches the shell-first CLI choice (§15.2),
+   profile substitution needs are flat (`${MEDC_DNSMASQ_CONFIG}`,
+   `${MEDC_AUTHORIZED_KEYS}`, etc. — no conditionals, no loops).
+   Switch trigger: if templating ever needs branching or nested
+   iteration, that's a §15.2 limiter and we move to Go `text/template`
+   (or equivalent) at the same time the CLI moves.
+
+2. **MAC autogeneration: deterministic from the IP's last octet.**
+   Format: `02:6d:65:64:63:XX` where `XX` = last octet of the
+   instance's lab IP, in hex (i.e. literally the bytes spelling
+   `02:medc:...:XX` — `medc` is the four hex bytes `6d 65 64 63`).
+   Examples:
+   - `medc-gateway` (10.0.3.5) → `02:6d:65:64:63:05`
+   - `k0rdent-mgmt` (10.0.3.10) → `02:6d:65:64:63:0a`
+   - `k0s-child-master` (10.0.3.20) → `02:6d:65:64:63:14`
+   Idempotent across rebuilds. If the user supplies `mac` in the
+   topology, `medc apply` honors it verbatim. If omitted, the
+   autogenerated value is persisted into the config on first apply
+   so it shows up in subsequent diffs.
+
+3. **Binary host server: nginx (in Docker, on the gateway).**
+   Already shown in §4.2's gateway profile sketch. Caddy was the
+   alternative — nginx wins on familiarity and matches the existing
+   sketch. Switch trigger: if the binary host ever needs TLS
+   termination or auth, evaluate Caddy at that point.
+
+4. **`egress_interface: auto` resolution.**
+   `medc apply` resolves to the host's first default-route NIC:
+   ```
+   ip -4 route show default | awk '/default/ {print $5; exit}'
+   ```
+   If `ip route` returns no default, refuse to apply with exit code
+   4 (precondition not met). Documented in `medc verify` output
+   so operators see the resolution result on every status read.
+
+5. **IP / DHCP-range overlap validation.**
+   `medc apply` runs these checks before any Incus call. All
+   failures collected and printed; exit code 2 (config error).
+   Pseudocode:
+   ```
+   for inst in topology.instances:
+     refuse_if not inst.ip in network.ipv4
+     refuse_if inst.ip in network.dhcp_range
+   refuse_unless exactly_one(role == "gateway")
+   refuse_unless gateway.ip == network.gateway_ip
+   refuse_if duplicate_ips(topology.instances)
+   refuse_if duplicate_macs(topology.instances)  # after autogen
+   ```
+
+The state artifact (a sixth resolution, large enough to deserve its
+own section) is documented in §16 below.
+
 ---
 
-## 16. What's deliberately not in v1
+## 16. State artifact
+
+### 16.1 Purpose
+
+`medc apply` writes a structured state artifact at
+`/etc/medc/state.yaml` after a successful apply. The artifact is
+**MEDC's contract with downstream repos**: a description of the
+as-built lab that the k0s installer (separate repo) and any other
+downstream tooling can consume without scraping `incus list` or
+re-deriving from `medc.yaml`.
+
+YAML format chosen to stay close to Incus's own idiom — Incus uses
+YAML for profiles, network configs, instance configs, and the
+`incus admin init` preseed. Operators reading state.yaml are already
+in YAML headspace. For shell consumers who prefer `jq`, the CLI
+flag `medc state --output json` renders the same content as JSON
+on demand.
+
+Three-repo architecture:
+
+```
+  ┌─────────────────────────────────────────────────────────┐
+  │  MEDC (this repo)         — produces state.yaml         │
+  └──────┬──────────────────────────────────────────────────┘
+         │ /etc/medc/state.yaml
+         ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  k0s installer (separate)  — reads state.yaml,          │
+  │                              installs k0s on mgmt +     │
+  │                              child cluster + registry   │
+  └──────┬──────────────────────────────────────────────────┘
+         │ kubeconfig
+         ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  k0rdent-deployment (separate) — `kubectl --context`    │
+  │                                  helm-installs kcm/ksm  │
+  └─────────────────────────────────────────────────────────┘
+```
+
+MEDC has no other interface obligations to downstream — no SSH
+preconditions on mgmt, no preinstalled tools, nothing in
+`/etc/k0rdent/`. Just the artifact.
+
+### 16.2 Schema
+
+```yaml
+medc_version: "1"
+applied_at: "2026-04-30T17:23:00Z"
+
+host:
+  egress_interface: eth0
+
+network:
+  name: medcbr0
+  ipv4: 10.0.3.0/24
+  bridge_address: 10.0.3.1
+  gateway_ip: 10.0.3.5
+  dns_domain: medc.local
+  dhcp_range: 10.0.3.100-10.0.3.199
+
+instances:
+  - name: medc-gateway
+    role: gateway
+    ip: 10.0.3.5
+    mac: 02:6d:65:64:63:05
+    fqdn: medc-gateway.medc.local
+    cpu: 2
+    memory: 4GiB
+    services:
+      - dnsmasq
+      - tailscale-subnet-router
+      - binary-host
+      - nat
+
+  - name: k0rdent-mgmt
+    role: mgmt
+    ip: 10.0.3.10
+    mac: 02:6d:65:64:63:0a
+    fqdn: k0rdent-mgmt.medc.local
+    cpu: 2
+    memory: 8GiB
+    services: []
+
+  # k0s-child-master, k0s-child-worker1, k0s-child-worker2 ...
+
+endpoints:
+  binary_host: http://binaries.medc.local
+  gateway_ssh: robot@medc-gateway.medc.local
+
+downstream_hints:
+  k8s_install_target_mgmt: k0rdent-mgmt
+  k8s_install_target_master: k0s-child-master
+  k8s_install_target_workers:
+    - k0s-child-worker1
+    - k0s-child-worker2
+  ingress_via: medc-gateway
+```
+
+### 16.3 Field semantics
+
+- **`medc_version`** — matches `medc.yaml`'s schema version. Bumped
+  on breaking changes. Consumers pin and refuse-on-mismatch.
+- **`applied_at`** — RFC3339 timestamp of the last successful apply.
+  Useful for "is this state stale?" checks.
+- **`host.egress_interface`** — the resolved host NIC pulled into the
+  gateway as `eth1`. If config said `auto`, this records the
+  resolution result.
+- **`network.*`** — copy of the operative network config. Consumers
+  use `gateway_ip` as the lab's default route, `dns_domain` for
+  building hostnames.
+- **`instances[]`** — ordered list (gateway first, then mgmt, then
+  k8s tier). Each entry's `services` field summarizes what the
+  instance runs from MEDC's perspective; non-empty for the gateway,
+  empty for instances MEDC just stands up as Debian boxes.
+- **`endpoints.binary_host`** — full URL ready for `curl`. Useful
+  for staging installer artifacts the k0s installer needs before
+  k8s exists.
+- **`endpoints.gateway_ssh`** — `user@host` form. The user is
+  pulled from `auth.user`. Consumers bouncing through the gateway
+  to reach lab containers use this.
+- **`downstream_hints`** — explicit name-to-role mapping for the k0s
+  installer. Hints, not directives — the consumer can ignore and
+  re-derive from `instances[]` if it prefers. Naming kept
+  role-explicit (`k8s_install_target_mgmt`) so a consumer doesn't
+  need MEDC-internal vocabulary.
+
+### 16.4 Write semantics
+
+- **Path**: `/etc/medc/state.yaml`. Mode `0644`. Owner `root:root`.
+- **Atomicity**: `medc apply` writes to `state.yaml.new`, then
+  `rename(2)`s. Consumers reading mid-apply see either the previous
+  state or the new state, never partial.
+- **Idempotence**: every successful apply writes the artifact, even
+  if no instance state changed. The `applied_at` timestamp is the
+  only field guaranteed to differ run-to-run on a no-op apply.
+- **Failure**: if apply fails before all instances are up, the
+  artifact is **not** written. Consumers see the previous successful
+  state, which may be stale; that's better than seeing partial state.
+  `medc verify` is the way to confirm freshness.
+
+### 16.5 Read semantics — `medc state`
+
+```
+medc state                    # pretty-print table of instances + endpoints
+medc state --output yaml      # raw YAML to stdout (default machine format)
+medc state --output json      # JSON conversion for jq consumers
+```
+
+All modes ultimately render the contents of `/etc/medc/state.yaml`.
+Exit codes:
+- `0` if the file exists and parses.
+- `4` (precondition) if the file is missing — `medc apply` hasn't
+  been run yet.
+- `1` (generic) on parse failure.
+
+The pretty-printed mode is for humans (table of instances + summary
+of endpoints). The YAML mode is canonical. The JSON mode exists
+because shell consumers reach for `jq` more often than `yq`;
+producing JSON on demand is a one-liner inside `medc state` and
+saves every consumer from running their own conversion.
+
+Consumers should prefer `medc state --output yaml|json` over reading
+`/etc/medc/state.yaml` directly so that future implementations could
+move the path.
+
+### 16.6 Compatibility expectations
+
+The state artifact is a **stable public contract** — same status as
+the YAML schema. Within a major version:
+- Fields are added at the end of a mapping.
+- Fields are never renamed or removed.
+- New `services[]` entries may appear on the gateway.
+
+Across major versions: the `medc_version` bumps; consumers see the
+bump and refuse-or-migrate per their own contract.
+
+---
+
+## 17. What's deliberately not in v1
 
 - **k0rdent / k0smotron install on top of MEDC** — out of repo.
 - **Multi-host Incus clustering** — single-host v1 first, cluster
@@ -1454,3 +1574,20 @@ item; punt with a note that the schema will accommodate it later.
 - **Non-Debian guest distros** — v1 hardcodes Debian Trixie for
   cloud-init compatibility. Adding more is a schema enum extension,
   not a structural change.
+- **WireGuard support** — earlier drafts of the design specified an
+  optional `connectivity.wireguard` block running alongside tailscale
+  on the gateway. Removed from v1: tailscale covers the inbound-VPN
+  case for both Scenario A (cloud VPS) and Scenario B (corp lab),
+  and no concrete operator ask exists for WG peering. Add the block
+  back when an operator needs it; cleanly additive (gateway already
+  has the privileges WG needs).
+- **Container registry** — earlier drafts shipped `registry:2` on
+  the gateway as part of `infra.registry`. Removed from v1: deploying
+  the registry is the **k0s installer's job** (the second repo).
+  Whatever registry MEDC's downstream needs — `registry:2`, Harbor,
+  Nexus, or an external — gets deployed onto the mgmt k8s cluster
+  by the layer that knows what it wants. MEDC just leaves a clean
+  lab + a CNAME-extensible dnsmasq, so the k0s installer can wire
+  `registry.<dns_domain>` to wherever it deploys. Cleanly additive:
+  if MEDC ever needs to ship a default lab-internal registry again,
+  the `infra.registry` block slots back into the same place.
