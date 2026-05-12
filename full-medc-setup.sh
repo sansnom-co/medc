@@ -1,6 +1,6 @@
 #!/bin/bash
-# Complete LXC Setup Script for k0rdent + k0smotron
-# Run as: sudo ./setup-lxc-complete.sh
+# MEDC — Complete LXC Setup Script for k0rdent + k0smotron
+# Run as: sudo ./full-medc-setup.sh
 
 set -e  # Exit on error
 

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://stacklit.dev/schema/v1.json",
+  "version": "1",
+  "generated_at": "2026-04-27T13:52:27Z",
+  "stacklit_version": "dev",
+  "merkle_hash": "f5a406f9a42606d208ddb4ba8ed3e491515c495e4cae1dc20c1ee67223a1bfe2",
+  "project": {
+    "name": "minimal-extendable-data-centre",
+    "root": ".",
+    "type": "single"
+  },
+  "tech": {
+    "primary_language": "shell",
+    "languages": {
+      "shell": {
+        "files": 6,
+        "lines": 752
+      }
+    }
+  },
+  "structure": {
+    "entrypoints": null,
+    "total_files": 6,
+    "total_lines": 752
+  },
+  "modules": {
+    "root": {
+      "purpose": "Root package",
+      "language": "shell",
+      "files": 6,
+      "lines": 752,
+      "file_list": [
+        "check-medc-health.sh",
+        "create-containers.sh",
+        "full-medc-setup.sh",
+        "init-containers.sh",
+        "medc-k8s-powerup.sh",
+        "medc-production-ready.sh"
+      ],
+      "activity": "low"
+    }
+  },
+  "dependencies": {
+    "edges": null,
+    "entrypoints": null,
+    "most_depended": [
+      "root"
+    ],
+    "isolated": [
+      "root"
+    ]
+  },
+  "git": {
+    "hot_files": [
+      {
+        "path": "stacklit.json",
+        "commits_90d": 2
+      },
+      {
+        "path": "AGENTS.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "CLAUDE.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "DEPENDENCIES.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "MEDC-overview.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "README.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "check-medc-health.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "crontab-entry.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "full-medc-setup.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "medc-k8s-powerup.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "medc-production-ready.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "readme-startup.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "readme.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "vcd-describe.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "vdc-overview-readme.md",
+        "commits_90d": 1
+      }
+    ],
+    "recent": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "MEDC-overview.md",
+      "README.md",
+      "check-medc-health.sh",
+      "crontab-entry.txt",
+      "full-medc-setup.sh",
+      "medc-k8s-powerup.sh",
+      "medc-production-ready.sh",
+      "readme-startup.txt"
+    ],
+    "stable": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "DEPENDENCIES.md",
+      "MEDC-overview.md",
+      "README.md",
+      "check-medc-health.sh",
+      "crontab-entry.txt",
+      "full-medc-setup.sh",
+      "medc-k8s-powerup.sh",
+      "medc-production-ready.sh"
+    ]
+  },
+  "hints": {},
+  "architecture": {}
+}

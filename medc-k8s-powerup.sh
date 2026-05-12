@@ -1,5 +1,5 @@
 #!/bin/bash
-# LXC K8s Startup Script
+# MEDC — LXC k8s startup / power-up script
 
 # Ensure IP forwarding
 sysctl -w net.ipv4.ip_forward=1

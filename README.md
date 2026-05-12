@@ -1,146 +1,97 @@
-# Virtual Container Datacenter (VCD)
+# MEDC — Minimal Extendable Data Centre
 
-A lightweight, container-based infrastructure that simulates a multi-node datacenter environment using LXC containers. Perfect for Kubernetes development, testing, and learning cluster management on limited hardware. The virtual container-based datacenter (VCD) approach leverages LXC containers to simulate a realistic, multi-node Kubernetes environment on a single physical host. Unlike tools such as Kind or Minikube—which offer limited, single-node or nested-cluster setups—LXC provides lightweight system containers that boot quickly, support systemd, and share the host kernel. This enables the simulation of actual node roles (control plane, workers) with full networking and SSH access, making it ideal for k0rdent and k0s development, cluster management testing, and education, even on modest hardware.
+MEDC is a lightweight datacenter-simulation platform: the same role as Proxmox
+or VMware, but an order of magnitude smaller and cheaper. It exists so a
+developer can stand up a full multi-cluster Kubernetes topology on a single
+beefy server and exercise tooling — particularly **k0rdent** and
+**k0smotron** — against a layout that mirrors what a real customer runs.
 
-By combining automated scripts (`full-vcd-setup.sh`, `vcd-production-ready.sh`) with optimised kernel parameters and production-hardening routines, VCD allows users to replicate real-world k8s behaviours including CNI networking, service exposure, RBAC, and node failure testing. This makes it suitable for CI workflows, platform engineering validation (e.g. k0rdent), and infrastructure-as-code scenarios. The use of cron jobs for backup, health checks, and boot-time container orchestration further supports production-like lifecycle management.
+k0rdent itself installs *on top of* MEDC as a post-deployment step. This
+repo is the host-platform layer only.
 
-Overall, VCD provides a middle ground between heavyweight VM-based clusters and abstraction-heavy dev tools, offering both performance efficiency and low-level control. Its design allows developers and  engineers to test, simulate, and iterate quickly on k8s cluster topologies and behaviours, while keeping the barrier to entry low—no hypervisor or cloud credits required. For teams building, operating, or teaching k8s, VCD offers a powerful, scriptable, and resource-efficient foundation.
+## Status
 
+- **Current (v0):** LXC-based MVP. Four fixed containers on `10.0.3.0/24`:
+  one management node + one k0s master + two k0s workers. All infra values
+  hardcoded in shell.
+- **In flight:** rebrand to MEDC (this repo), rewrite docs, remove dead refs.
+- **Next:** parameterize topology (node count, IPs, network CIDR, hostnames,
+  DNS domain, ingress/egress routes, credentials), then migrate from raw
+  LXC to **Incus**. See `MEDC-overview.md` for the full refactor roadmap.
 
-## 🚀 Features
-
-- **Full datacenter simulation** using LXC containers
-- **Kubernetes-ready** environment with optimized kernel parameters
-- **Automated setup** with production-ready scripts
-- **Resource-efficient** - Run multiple nodes on a single host
-- **Built-in monitoring** and health checks
-- **Automated backups** and maintenance
-
-## 📋 Architecture
+## Default topology (MVP)
 
 ```
-Host System (ARM64/x86_64)
-    └── lxcbr0 Bridge (10.0.3.0/24)
-         ├── k0rdent-mgmt (10.0.3.10) - Management Node
-         ├── k0s-master (10.0.3.20) - K8s Master
-         ├── worker1 (10.0.3.21) - K8s Worker
-         └── worker2 (10.0.3.22) - K8s Worker
+Host (Debian Trixie, ARM64 or x86_64)
+    └── lxcbr0 (10.0.3.0/24)
+         ├── k0rdent-mgmt     10.0.3.10   management / control
+         ├── k0s-child-master 10.0.3.20   k8s master
+         ├── k0s-child-worker1 10.0.3.21  k8s worker
+         └── k0s-child-worker2 10.0.3.22  k8s worker
 ```
 
-## 🛠️ Quick Start
+Per-container defaults: 4 GB RAM, ~2 CPU. Default user `robot` with a demo
+password (see `full-medc-setup.sh` — **do not reuse these credentials
+outside the lab**).
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/vcd.git
-   cd vcd
-   ```
+## Quick start
 
-2. **Run the setup**
-   ```bash
-   sudo ./full-vcd-setup.sh
-   # Choose option 1 for complete setup
-   ```
-
-3. **Harden for production**
-   ```bash
-   sudo ./vcd-production-ready.sh
-   ```
-
-4. **Verify installation**
-   ```bash
-   sudo ./check-vdc-health.sh
-   ```
-
-## 💻 Usage
-
-### Access containers
 ```bash
-# Direct access
-sudo lxc-attach -n k0rdent-mgmt
+# 1. Bring up networking + containers + users/SSH
+sudo ./full-medc-setup.sh      # menu-driven; choose option 1 for full setup
 
-# SSH access (default password: 123robot)
-ssh robot@10.0.3.10  # Management node
-ssh robot@10.0.3.20  # Master node
+# 2. Harden for k8s (chrony, kernel params, cgroup limits, logrotate,
+#    inline-generated backup + maintenance scripts)
+sudo ./medc-production-ready.sh
+
+# 3. Verify
+sudo ./check-medc-health.sh
 ```
 
-### Start/Stop VCD
+On reboot, run `sudo ./medc-k8s-powerup.sh` (or wire it into systemd — see
+`MEDC-overview.md` §Known gaps).
+
+## Access
+
 ```bash
-# Start all containers
-sudo /usr/local/bin/vdc-k8s-powerup.sh
-
-# Stop a container
-sudo lxc-stop -n k0rdent-mgmt
+sudo lxc-attach -n k0rdent-mgmt         # direct
+ssh robot@10.0.3.10                     # management node
+ssh robot@10.0.3.20                     # k0s master
 ```
 
-### Monitor health
-```bash
-sudo ./check-vdc-health.sh
-```
+## Requirements
 
-## 📊 Container Resources
+- **Host OS:** Debian-based (tested on Trixie)
+- **Arch:** ARM64 or x86_64
+- **RAM:** ≥ 16 GB (4 GB × 4 containers, plus host headroom)
+- **Disk:** ≥ 50 GB
+- **CPU:** 4+ cores
+- **Privilege:** root on the host
 
-| Container | CPU | Memory | Role |
-|-----------|-----|--------|------|
-| k0rdent-mgmt | 2 | 4GB | Management/Control |
-| k0s-child-master | 2 | 4GB | Kubernetes Master |
-| k0s-child-worker1 | 2 | 4GB | Kubernetes Worker |
-| k0s-child-worker2 | 2 | 4GB | Kubernetes Worker |
+## Repo layout
 
-## 📚 Scripts Overview
+| File                        | Purpose                                       |
+|-----------------------------|-----------------------------------------------|
+| `full-medc-setup.sh`        | End-to-end installer (menu-driven)            |
+| `create-containers.sh`      | Standalone container-creation path            |
+| `init-containers.sh`        | In-container package init                     |
+| `medc-production-ready.sh`  | k8s-hardening pass                            |
+| `check-medc-health.sh`      | Host-side health probe                        |
+| `medc-k8s-powerup.sh`       | Boot-time / manual startup                    |
+| `crontab-entry.txt`         | Suggested crontab for health + backup + maint |
+| `MEDC-overview.md`          | Architecture, roadmap, known gaps             |
+| `CLAUDE.md`                 | Agent-oriented repo guidance                  |
+| `stacklit.{json,html}`      | Auto-generated source map (`stacklit generate`) |
+| `DEPENDENCIES.md`           | Auto-generated dependency map                 |
 
-- `full-vcd-setup.sh` - Complete environment setup
-- `vcd-production-ready.sh` - Production hardening
-- `check-vdc-health.sh` - Health monitoring
-- `vdc-k8s-powerup.sh` - Startup automation
+## Contributing
 
-## 🔧 Requirements
+Don't silently rename, re-IP, or re-credential: specific values are
+configurable-in-flight, not throwaway. The default 1-mgmt + 1-master +
+2-worker role layout matches k0rdent's child-cluster pattern and stays
+as the default after parameterization. See `CLAUDE.md` for the full set
+of invariants and the run policy for automated agents.
 
-- **OS**: Debian-based Linux (tested on Debian Trixie)
-- **Architecture**: ARM64 or x86_64
-- **Memory**: Minimum 16GB RAM
-- **Storage**: 50GB+ recommended
-- **CPU**: 4+ cores recommended
-- **Privileges**: Root access required
+## License
 
-## 📁 Project Structure
-
-```
-vcd/
-├── full-vcd-setup.sh           # Main setup script
-├── create-containers.sh        # Container creation
-├── init-containers.sh          # Container initialization
-├── vcd-production-ready.sh     # Production hardening
-├── check-vdc-health.sh         # Health monitoring
-├── vdc-k8s-powerup.sh         # Startup automation
-└── README.md                   # This file
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## ⚡ Quick Tips
-
-- Containers auto-start on system boot
-- Daily backups run at 2 AM via cron
-- Default network: `10.0.3.0/24`
-- All containers use `robot` user with sudo access
-- Logs available in `/var/log/lxc-*.log`
-
-## 🐛 Troubleshooting
-
-If containers don't start:
-```bash
-sudo systemctl status lxc-net
-sudo systemctl restart lxc-net
-```
-
-For more detailed documentation, see the [full documentation](vdc-overview-readme.md).
-
----
-
-**Note**: This project creates a simulated datacenter environment. While production-ready features are included, always test thoroughly before using in critical environments.
+MIT. See `LICENSE` if present.

@@ -1,6 +1,6 @@
 #!/bin/bash
-# LXC Production Ready Setup for Kubernetes
-# This script hardens and optimizes LXC containers for production k8s use
+# MEDC — Production-readiness hardening for the LXC-based lab
+# Hardens and optimizes LXC containers for production k8s use
 
 set -e
 
@@ -243,11 +243,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     sleep 10
 fi
 
-# Step 10: Final checks
-print_header "Running final checks"
-/usr/local/bin/lxc-k8s-checklist.sh
-
-print_header "Production setup complete!"
+print_header "MEDC production setup complete!"
 echo
 echo "Scripts created:"
 echo "  - /usr/local/bin/backup-lxc-containers.sh"
@@ -261,5 +257,5 @@ echo "  # Weekly maintenance on Sunday at 3 AM"
 echo "  0 3 * * 0 /usr/local/bin/maintain-lxc-containers.sh > /var/log/lxc-maintenance.log 2>&1"
 echo
 echo "Next steps:"
-echo "  1. Run: sudo /usr/local/bin/lxc-k8s-checklist.sh"
+echo "  1. Run: sudo ./check-medc-health.sh"
 echo "  2. If all checks pass, proceed with k0rdent/k0smotron installation"
