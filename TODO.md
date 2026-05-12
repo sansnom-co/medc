@@ -45,6 +45,7 @@ Each lands as its own stacked PR. Plan in
 `~/.claude/plans/this-repo-contains-the-groovy-cosmos.md`.
 - [ ] **v1 PR3 — host prereqs + Incus init preseed**
       `host/medc-host-prereqs.sh`, `host/incus-init.yaml.tmpl`.
+      Detailed execution tracker: `docs/pr3-host-prereqs-checklist.md`.
       apt installs (incus, tailscale, iptables-persistent),
       modprobe + persist (`br_netfilter`, `overlay`), sysctls
       (`ip_forward`), btrfs/dir storage choice prompt.
@@ -52,16 +53,20 @@ Each lands as its own stacked PR. Plan in
       `bin/medc` + `bin/medc-lib/*.sh`. YAML parse, schema validation,
       profile render via `envsubst`, network + storage create, state
       artifact emit (atomic-rename).
+      Detailed execution tracker: `docs/pr4-medc-apply-core-checklist.md`.
 - [ ] **v1 PR5 — `medc apply` instance launch + readiness gates**
       Gateway-first sequence with two-gate readiness (cloud-init
       finished + DNS query against `medc-gateway:53`). Other
       instances launched in parallel within tier.
+      Detailed execution tracker: `docs/pr5-instance-launch-readiness-checklist.md`.
 - [ ] **v1 PR6 — `medc destroy` + maintenance verbs**
       `medc destroy [--purge]`, `medc maintenance on|off`.
+      Detailed execution tracker: `docs/pr6-destroy-maintenance-checklist.md`.
 - [ ] **v1 PR7 — read verbs + JSON output**
       `medc status`, `verify`, `wait-ready`, `state`, `snapshot`,
       `exec`, `logs`. Exit codes per `docs/v1-design.md` §15.5.
       v0 LXC scripts deleted as the final action.
+      Detailed execution tracker: `docs/pr7-read-verbs-json-checklist.md`.
 
 ## Open design items (not blocking PR2)
 
@@ -121,6 +126,38 @@ The roadmap in `MEDC-overview.md` §4 and the Phase tracker in
 them in sync at the milestone boundaries (rebrand done, design done,
 PR1 done, etc.).
 
+## Methodology (Reusable)
+
+Use a two-layer tracking model:
+
+- `TODO.md` is the high-level control plane (status, sequencing,
+  in-flight vs next, cross-repo context).
+- `docs/pr*-*-checklist.md` files are execution planes for each phase
+  (atomic implementation tasks, mandatory tests, evidence logs, exit
+  criteria).
+
+Workflow:
+
+1. Add/maintain phase bullets in `TODO.md`.
+2. Link each phase bullet to its dedicated checklist file in `docs/`.
+3. Break phase work into atomic checkboxes in the checklist.
+4. Define mandatory tests and record command-level evidence.
+5. Mark phase review-ready only when all mandatory tests pass.
+
+Template for reuse in this or other repos:
+
+- `docs/pr-phase-checklist-template.md`
+
+## Phase checklist standard
+
+For each v1 PR phase, maintain a dedicated checklist file in `docs/`:
+`docs/pr<phase>-<short-name>-checklist.md`.
+
+`TODO.md` remains the high-level status index only. Detailed
+implementation tasks, mandatory tests, and evidence logs live in the
+phase checklist file. A phase is not review-ready until all mandatory
+tests in its checklist pass with recorded evidence.
+
 ## References
 
 | Document | Purpose |
@@ -129,6 +166,8 @@ PR1 done, etc.).
 | `docs/lxc-parameter-inventory.md` | Every v0 parameter mapped to its v1 equivalent. Retired at v1 ship. |
 | `MEDC-overview.md` | User-facing architecture + refactor roadmap + known gaps. |
 | `README.md` | Concise landing page. |
+| `docs/TRACKING-STANDARD.md` | Reusable phase tracking methodology (high-level + per-phase checklist model). |
+| `docs/pr-phase-checklist-template.md` | Template for creating `docs/pr*-*-checklist.md` execution trackers. |
 | `CLAUDE.md` | Agent guidance: hard invariants, decisions baked in, run policy, open items. |
 | `AGENTS.md` | Repo-wide agent policy (top of authority chain). |
 | `config/medc.yaml.example` | Annotated reference YAML — copy and edit. |

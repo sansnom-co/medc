@@ -20,6 +20,10 @@ see [`TODO.md`](TODO.md). For the v1 architecture and rationale see
 [`MEDC-overview.md`](MEDC-overview.md). For the full v1 blueprint see
 [`docs/v1-design.md`](docs/v1-design.md).
 
+For phased execution tracking standards and reusable checklist structure,
+see [`docs/TRACKING-STANDARD.md`](docs/TRACKING-STANDARD.md) and
+[`docs/pr-phase-checklist-template.md`](docs/pr-phase-checklist-template.md).
+
 ## Default topology (MVP)
 
 ```
