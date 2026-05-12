@@ -56,6 +56,18 @@ sudo ./check-medc-health.sh
 On reboot, run `sudo ./medc-k8s-powerup.sh` (or wire it into systemd — see
 `MEDC-overview.md` §Known gaps).
 
+## v1 host prerequisites (in progress)
+
+For the v1 Incus path, run host prereqs first:
+
+```bash
+sudo ./host/medc-host-prereqs.sh
+sudo incus admin init --preseed < /etc/medc/incus-init.yaml
+```
+
+This stage sets host packages/modules/sysctls and writes the preseed only.
+`medc apply` orchestration lands in the next phases.
+
 ## Access
 
 ```bash
