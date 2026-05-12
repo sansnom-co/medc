@@ -1,7 +1,7 @@
 {
   "$schema": "https://stacklit.dev/schema/v1.json",
   "version": "1",
-  "generated_at": "2026-04-17T14:52:55Z",
+  "generated_at": "2026-04-27T13:52:27Z",
   "stacklit_version": "dev",
   "merkle_hash": "f5a406f9a42606d208ddb4ba8ed3e491515c495e4cae1dc20c1ee67223a1bfe2",
   "project": {
@@ -53,29 +53,89 @@
   "git": {
     "hot_files": [
       {
+        "path": "stacklit.json",
+        "commits_90d": 2
+      },
+      {
+        "path": "AGENTS.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "CLAUDE.md",
+        "commits_90d": 1
+      },
+      {
         "path": "DEPENDENCIES.md",
         "commits_90d": 1
       },
       {
-        "path": "stacklit.json",
+        "path": "MEDC-overview.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "README.md",
+        "commits_90d": 1
+      },
+      {
+        "path": "check-medc-health.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "crontab-entry.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "full-medc-setup.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "medc-k8s-powerup.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "medc-production-ready.sh",
+        "commits_90d": 1
+      },
+      {
+        "path": "readme-startup.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "readme.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "vcd-describe.txt",
+        "commits_90d": 1
+      },
+      {
+        "path": "vdc-overview-readme.md",
         "commits_90d": 1
       }
     ],
     "recent": [
-      "DEPENDENCIES.md",
-      "stacklit.json",
+      "AGENTS.md",
+      "CLAUDE.md",
+      "MEDC-overview.md",
       "README.md",
-      "check-vcd-health.sh",
-      "create-containers.sh",
+      "check-medc-health.sh",
       "crontab-entry.txt",
-      "full-vcd-setup.sh",
-      "init-containers.sh",
-      "readme-startup.txt",
-      "readme.txt"
+      "full-medc-setup.sh",
+      "medc-k8s-powerup.sh",
+      "medc-production-ready.sh",
+      "readme-startup.txt"
     ],
     "stable": [
+      "AGENTS.md",
+      "CLAUDE.md",
       "DEPENDENCIES.md",
-      "stacklit.json"
+      "MEDC-overview.md",
+      "README.md",
+      "check-medc-health.sh",
+      "crontab-entry.txt",
+      "full-medc-setup.sh",
+      "medc-k8s-powerup.sh",
+      "medc-production-ready.sh"
     ]
   },
   "hints": {},

@@ -22,49 +22,81 @@ k0rdent installation itself is a *post-MEDC* step and lives outside
 this repo. MEDC is only the host-platform layer.
 
 User-facing docs: `README.md` (landing) and `MEDC-overview.md`
-(architecture + roadmap + known gaps). Start there for intent.
+(architecture + roadmap + known gaps). Design docs:
+`docs/v1-design.md` (blueprint for the Incus + gateway implementation,
+≈1450 lines, definitive) and `docs/lxc-parameter-inventory.md` (v0
+parameter snapshot, retired at v1 ship). Start there for intent.
 
-## Current state vs target state
+## Where we are
 
-| Axis            | v0 — today (MVP)                        | v1 — target                   |
-|-----------------|-----------------------------------------|-------------------------------|
-| Runtime         | Raw LXC + hand-rolled bridge/dnsmasq/iptables | Incus managed network + profiles |
-| Topology        | Hardcoded: 4 named containers, fixed IPs | Driven by a config file       |
-| Credentials     | Demo `robot` user, password in shell   | Sourced from config, SSH-key by default |
-| Branding        | Rebranded to MEDC as of this pass       | (stable)                      |
+The repo is between v0 (the running LXC MVP, rebranded to MEDC) and
+v1 (Incus + gateway, fully designed but not yet implemented).
 
-Agents should expect both worlds to coexist in the tree during the
-refactor. Don't "tidy up" one direction prematurely.
+| Axis | v0 — in-tree today (MVP) | v1 — designed, not yet coded |
+|---|---|---|
+| Runtime | Raw LXC + hand-rolled bridge/dnsmasq/iptables on host | Incus + a **gateway instance** holding dnsmasq/NAT/tailscale/registry |
+| Topology | Hardcoded: 4 named containers, fixed IPs | YAML-driven; default = 5 instances (gateway + mgmt + master + 2 workers) |
+| Mgmt RAM | 4 GiB | **8 GiB** (k0rdent MCM memory pressure observed) |
+| Networking | `lxcbr0`, `lxc.local`, NAT on host | `medcbr0` (NAT off), `medc.local`, gateway terminates NAT and runs dnsmasq |
+| Tailscale | n/a | Two-tier: host (superuser) + gateway subnet router (no per-container) |
+| Credentials | Demo `robot` user, password in shell | SSH-key by default, password auth opt-in only |
+| Branding | Rebranded to MEDC | (stable) |
+
+**Implication for agents:** `docs/v1-design.md` is the definitive
+spec; the LXC scripts in the repo root are the v0 implementation
+that v1 replaces wholesale. Don't "tidy up" v0 LXC scripts in
+preparation for v1 — they're going to be deleted in the v1 ship PR.
+Conversely, don't start writing v1 code without checking the design
+doc first.
 
 ## Hard invariants
 
 These survive the refactor. Do not silently change any of them.
 
-- **Default role layout**: 1 management node + 1 k0s master + 2 k0s
-  workers. Matches k0rdent's child-cluster pattern; stays as the
-  *default* topology after parameterization. Node *count* becomes
-  configurable; the *default roles* do not.
-- **Default container names** (used throughout docs and scripts):
-  `k0rdent-mgmt`, `k0s-child-master`, `k0s-child-worker1`,
-  `k0s-child-worker2`.
-- **Default network**: `lxcbr0`, `10.0.3.0/24`, gateway `10.0.3.1`,
-  DNS domain `lxc.local`. Becomes configurable; defaults stay.
-- **Addressing model**: DHCP with static reservations keyed on
-  container MAC (dnsmasq `dhcp-host=<mac>,<ip>,<name>`). **Not**
-  hardcoded per-container IPs on the container side. This matters —
-  it lets you rebuild a container and have it land on the same IP
-  without editing from inside. Preserve this model when parameterizing
-  and when moving to Incus.
-- **Per-container defaults**: 4 GB RAM, ~2 CPU. Configurable later.
+- **Default role layout (v1)**: 1 **gateway** + 1 mgmt + 1 k8s-control
+  + 2 k8s-workers (= 5 instances). The gateway instance is the lab's
+  router/services VM (dnsmasq, tailscale subnet router, WireGuard,
+  registry, binary host, NAT, ingress). Exactly one gateway per
+  topology — multi-gateway HA is post-v1. Other roles' counts become
+  configurable; the *default roles* don't.
+- **Default container names**: `medc-gateway`, `k0rdent-mgmt`,
+  `k0s-child-master`, `k0s-child-worker1`, `k0s-child-worker2`.
+- **Default network**: bridge `medcbr0`, subnet `10.0.3.0/24`, lab
+  gateway IP `10.0.3.5` (the gateway instance), bridge address
+  `10.0.3.1`, DNS domain `medc.local`. Configurable in `medc.yaml`;
+  defaults stay.
+- **Addressing model**: DHCP with static reservations keyed on MAC,
+  served by the **gateway's dnsmasq** (`dhcp-host=<mac>,<ip>,<name>`).
+  **Not** hardcoded per-container IPs on the container side. Lets
+  you rebuild any non-gateway instance and have it land on the same
+  IP without editing from inside. The gateway itself uses a static
+  config (chicken-and-egg).
+- **Default resources**: mgmt = 8 GiB RAM, others = 4 GiB; 2 CPU
+  each. The mgmt 8 GiB default is from observed k0rdent MCM memory
+  pressure — don't drop it back to 4 without evidence the pressure is
+  gone.
 - **Rootfs default**: Debian Trixie.
-- **Credentials**: `robot:<demo-pass>` today, password-auth SSH
-  enabled. **Demo only.** When parameterizing, default to SSH keys
-  and require credentials to come from config; do not check a default
-  password into the repo.
+- **Architecture default**: x86_64; ARM64 supported via config.
+  v0's hardcoded `-a arm64` was a bug, fixed in v1.
+- **Credentials**: SSH keys by default in v1, password auth opt-in
+  only. Do not check default passwords into the repo. (v0's
+  `robot:123robot` is demo-only and stays in v0 scripts as historical
+  state until v1 deletes those scripts.)
+- **Tailscale shape**: two tiers, **host tailscaled (superuser) +
+  gateway tailscaled (subnet router for `10.0.3.0/24`)**. No
+  per-container tailscaled — that pattern was explicitly retracted.
+- **Storage**: btrfs strongly preferred, ZFS equivalent, `dir`
+  explicit fallback. Bcachefs not yet supported (Incus driver gap).
+- **Agent-friendly CLI surface**: every read verb must support
+  `--output json`; predictable exit codes (0 success, 2 config error,
+  3 drift, 4 precondition); no interactive prompts in `apply`/
+  `destroy`. Schema changes bump `medc.version`. These are bake-in-now
+  constraints because the future REST/MCP API depends on them.
 
 ## Files and their roles
 
-**Live scripts** (all root-required, all operate on the host):
+**v0 LXC scripts** (in repo root; root-required; all operate on the
+host; deleted at v1 ship):
 
 - `full-medc-setup.sh` — menu-driven end-to-end installer. **Writes
   `/usr/local/bin/create-k8s-lxc.sh` and
@@ -80,9 +112,25 @@ These survive the refactor. Do not silently change any of them.
   `/usr/local/bin/maintain-lxc-containers.sh` inline.**
 - `check-medc-health.sh` — bridge / IP-forward / NAT / connectivity
   probe.
-- `medc-k8s-powerup.sh` — boot-time / manual reconciliation. Currently
-  there is **no systemd unit** shipped that invokes it — see
-  `MEDC-overview.md` §5.3 for the gap.
+- `medc-k8s-powerup.sh` — boot-time / manual reconciliation. No
+  systemd unit ships invoking it — known v0 gap (see
+  `MEDC-overview.md` §5.3); fixed wholesale in v1.
+
+**Design docs** (definitive references for v1 work):
+
+- `docs/v1-design.md` — the v1 blueprint (architecture, YAML schema,
+  profiles, network, tailscale, registry, bring-up flow, CLI). Read
+  this before proposing v1 code or schema changes.
+- `docs/lxc-parameter-inventory.md` — every v0 parameter mapped to
+  its v1 equivalent. Useful for "what does v0 do for X?" lookups.
+  Retired at v1 ship.
+
+**External research** (outside the repo, but relevant):
+
+- `~/Devops/incus-docs/` — vendored Incus doc tree (Sphinx/Markdown,
+  ~3.4 MB). Authoritative for Incus-side questions.
+- `~/Devops/incus-docs/medc-migration-notes.md` — the curated
+  Incus-mapping notes from earlier research; cites the doc paths.
 
 **Support files**:
 - `crontab-entry.txt` — suggested crontab (install manually).
@@ -90,6 +138,10 @@ These survive the refactor. Do not silently change any of them.
 - `stacklit.json`, `stacklit.html`, `DEPENDENCIES.md` — auto-generated
   by `stacklit`; regenerate with `stacklit generate`. **Do not
   hand-edit.**
+
+**Authority files**:
+- `AGENTS.md` — repo-wide agent policy (top of authority chain).
+- `CLAUDE.md` — this file.
 
 ## Run policy
 
@@ -112,33 +164,95 @@ checks or wrap the invocation to silence failure. Many of these
 scripts cascade (e.g. `create-containers.sh` depends on a file written
 by `full-medc-setup.sh`), and hiding the failure obscures the cascade.
 
-## Refactor roadmap (agent-flavoured)
+## Decisions baked in
 
-Mirrors `MEDC-overview.md` §4. Current phase and what not to touch:
+Don't re-litigate these without a concrete reason. They're settled
+across `docs/v1-design.md`, `docs/lxc-parameter-inventory.md`, and
+this file.
 
-- **Phase A — Parameterization design** *(open)* — choose a config
-  format. Working default is shell-sourced `conf/medc.env`; YAML + a
-  small parser is plausible. **Do not unilaterally pick one.** Ask.
-- **Phase B — Parameterize LXC scripts** — blocked on A.
-- **Phase C — LXC → Incus migration** — blocked on B. Preserve the
-  DHCP-static-reservations model, not per-node hardcoded IPs.
+- **Architecture pattern**: gateway model. One instance terminates
+  NAT, runs dnsmasq, hosts registry/binaries, runs tailscale subnet
+  router. Mirrors a real-datacenter router/edge VM.
+- **Config format**: YAML (`medc.yaml`). Schema in `docs/v1-design.md`
+  §3. `medc.version` is contract; agents may pin to it.
+- **Implementation language**: shell first (`bin/medc`). Switch to
+  Go/Python only if shell becomes the limiter (concrete triggers in
+  `docs/v1-design.md` §15.2).
+- **Tailscale model**: two tiers (host superuser + gateway subnet
+  router). No per-container tailscaled.
+- **Registry default**: `registry:2` via Docker on the gateway.
+  Schema reserves `harbor` and `nexus` enum values; not implemented
+  in v1.
+- **Storage default**: btrfs strongly preferred. Bcachefs blocked
+  on upstream Incus driver.
+- **CLI scriptability**: JSON output mandatory on read verbs;
+  predictable exit codes; no prompts in apply/destroy. The future
+  REST/MCP API depends on these being correct now.
+- **Migration from v0**: clean cut. v1 ship deletes the v0 LXC
+  scripts wholesale. No `legacy/` directory; git history is the
+  archive.
+
+## Roadmap (agent-flavoured)
+
+Mirrors `MEDC-overview.md` §4 and `docs/v1-design.md`:
+
+- **Phase A — Parameterization design** *(closed)* — config format
+  decided (YAML); parameter inventory complete
+  (`docs/lxc-parameter-inventory.md`).
+- **Phase B — In-place LXC parameterization** *(skipped)* — the
+  Incus migration *is* the parameterization. No reason to touch
+  v0 LXC scripts before deletion.
+- **Phase C — Incus + gateway implementation** *(in progress: design
+  complete, code not started)* — see `docs/v1-design.md` for the
+  spec. Implementation lands in feature branches off `master`.
+  Direct push to `master` is policy-blocked; PRs only.
 - **Phase D — Verification suite** — blocked on C.
-- **Phase E — k0rdent install** — documented only, never scripted in
-  this repo.
+- **Phase E — k0rdent install** — documented only, never scripted
+  in this repo.
 
-Known gaps (from `MEDC-overview.md` §5) that the refactor must fold
-into scripts: container autostart config, iptables persistence,
-systemd unit for `medc-k8s-powerup.sh`.
+## Open items pending decision
+
+From `docs/v1-design.md` §15. None block C from starting; some need
+answers before specific sub-features lock in:
+
+- **15.1 Maintenance-mode UX** — global toggle vs per-instance flag
+  vs both. Working answer: both. Confirm at schema lock-in.
+- **15.3 Tailscale auth-key distribution** — env vars only in v1
+  (working answer); secret-store integrations punted.
+- **15.6 Registry product evolution path** — when Harbor/Nexus
+  land, do they stay as docker blocks on the gateway or split into
+  a services instance? Working answer: stay on gateway.
+- **15.7 WireGuard config schema details** — peer shape, PSK
+  support. Working answer: road-warrior only in v1.
+- **15.8 Air-gapped binary host populate** — how operators stage
+  files. Working answer: `incus file push` is the v1 mechanism;
+  CLI shortcut and remote-source schema item are punts.
 
 ## Workflow notes
 
-- **Stacklit**: refresh with `stacklit generate`. Installed via
-  `go install github.com/glincker/stacklit/cmd/stacklit@latest`,
-  symlinked into `~/.local/bin`.
-- **Commits**: a shared-commit method is pending user decision. Do
-  not commit on the user's behalf without explicit instruction.
+- **Repo orientation**: per `AGENTS.md`, use stacklit first
+  (`stacklit.json`, `DEPENDENCIES.md` are kept current — refresh
+  with `stacklit generate`). Then `rg` for content search, `fzf`
+  for narrowing. Both are installed and on PATH.
+- **Stacklit install**: `go install
+  github.com/glincker/stacklit/cmd/stacklit@latest`, symlinked into
+  `~/.local/bin`. Regenerate after any rename, file add, or file
+  delete.
+- **Commits and pushes**: direct push to `master` is policy-blocked
+  on this repo; create a feature branch, push it, open a PR. The
+  v1 implementation will land as a series of PRs (one per logical
+  unit; see `docs/v1-design.md` for the slice candidates). Do not
+  commit on the user's behalf without explicit instruction.
+- **GitHub remote**: `sansnom-co/medc` (renamed from
+  `k0rdent-vcd-lab` during the rebrand; old URL still redirects).
 - **Workspace context**: `~/Devops/CLAUDE.md` describes the wider
-  workspace; its rules apply outside this subproject but this
-  subproject's CLAUDE.md takes precedence inside this directory.
-- **Agent-specific guidance files** in parent directories (e.g. an
-  `AGENTS.md` in a sibling subproject) do not apply to MEDC.
+  workspace; its rules apply outside this subproject, but this
+  subproject's `CLAUDE.md` and `AGENTS.md` take precedence inside
+  this directory.
+- **Agent-specific guidance files** in sibling subprojects
+  (e.g. an `AGENTS.md` in `~/Devops/asus-fan-curve/`) do not apply
+  to MEDC.
+- **External research lives outside the repo**: Incus docs at
+  `~/Devops/incus-docs/`, migration notes at
+  `~/Devops/incus-docs/medc-migration-notes.md`. Do not vendor
+  these into the repo.

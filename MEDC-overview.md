@@ -85,41 +85,83 @@ Design tenets:
 - `crontab-entry.txt` — suggested cron: `@reboot` health check, daily
   backup, weekly maintenance.
 
-## 3. Target architecture (v1, Incus + parameterized)
+## 3. Target architecture (v1, Incus + gateway)
 
 The refactor replaces the hand-rolled bridge + dnsmasq + iptables plumbing
-with **Incus** primitives and moves every hardcoded value into a single
-config surface.
+with **Incus** primitives and introduces a **gateway instance** that
+mirrors what a real datacenter does: one router/services VM holding the
+DHCP, DNS, NAT, ingress, VPN termination, registry, and binary hosting.
+Every hardcoded value moves into a single YAML config (`medc.yaml`).
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Host  (one config file: conf/medc.env — or equivalent)      │
-├──────────────────────────────────────────────────────────────┤
-│  Incus managed network (bridge + DHCP + DNS, profile-driven) │
-│  Incus profiles:  base, k8s-control, k8s-worker              │
-├──────────────────────────────────────────────────────────────┤
-│   Default topology (configurable):                           │
-│   mgmt ── master ── workerN…                                 │
-│   IPs, CIDR, DNS domain, ingress + egress routes all         │
-│   come from config, not from the scripts.                    │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Host  (Debian Trixie)                                              │
+│  • incusd        — instance lifecycle, profiles, storage            │
+│  • tailscaled    — superuser/operator tailnet (host troubleshooting)│
+│                                                                     │
+│  Host uplink NIC ──── (passed into gateway as eth1, macvlan) ───┐   │
+│                                                                 │   │
+│  Incus bridge medcbr0 (10.0.3.0/24, NAT off, DHCP off, DNS off) │   │
+│   │      │      │      │      │                                 │   │
+│   │   mgmt   master  worker1 worker2                            │   │
+│   │  .10/8G  .20/4G  .21/4G  .22/4G                             │   │
+│   │                                                             │   │
+│   └─ medc-gateway (.5)                                          │   │
+│        • dnsmasq    (DHCP + DNS for the lab)                    │   │
+│        • tailscaled (subnet router for 10.0.3.0/24)             │   │
+│        • wireguard  (alternative VPN)                           │   │
+│        • registry:2 (registry.medc.local CNAME)                 │   │
+│        • binary host (binaries.medc.local CNAME)                │   │
+│        • iptables   (NAT to eth1, ingress DNAT)                 │   │
+│                                                                 │   │
+│        eth1 ───────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+
+  Default topology (configurable in medc.yaml):
+    1 gateway + 1 mgmt + 1 k8s-control + 2 k8s-workers (= 5 instances)
+  Mgmt has 8 GiB by default (k0rdent MCM memory pressure observed).
 ```
 
 **What Incus buys us**
 - One API for both system containers and VMs. Future MEDC topologies can
   mix container and VM nodes without running two tools.
-- Managed networks: no more hand-writing dnsmasq/iptables.
 - Profiles: no more `cat >> /var/lib/lxc/$NAME/config` edits.
-- First-class snapshotting and live migration primitives for the
-  backup/rebuild path.
+- First-class snapshotting for the backup/rebuild path.
 - Actively maintained (LXD is no longer Canonical-led; Incus is the
   community fork and the forward-looking target).
 
+**What the gateway buys us**
+- Hand-rolled dnsmasq + iptables move off the host into one container —
+  the host is just a hypervisor.
+- One tailscale subnet router for the whole lab (no per-container
+  tailscaled), with a separate host tailscaled gated to superusers.
+- Clean ingress/egress termination; matches a real datacenter's
+  router/edge-services VM pattern.
+- Registry + binary host on `registry.medc.local` and
+  `binaries.medc.local` (CNAMEs to the gateway) — air-gapped lab use
+  becomes trivial.
+
 **What stays**
-- The *default* role layout: 1 mgmt + 1 master + 2 workers (matches
-  k0rdent's child-cluster pattern).
+- The *default* role layout (now 1 gateway + 1 mgmt + 1 master + 2
+  workers, matching k0rdent's child-cluster pattern plus the new
+  edge-services node).
 - Debian Trixie as the default rootfs.
 - The hardening pass (chrony, kernel params, swap off).
+
+**Storage / filesystem choice (v1)**
+
+v1 defaults to **btrfs** for the Incus storage pool — instant
+copy-on-write snapshots are what makes MEDC's "rebuild in seconds"
+property real. ZFS is a fully equivalent alternative when already in
+use on the host. `dir` is a slow fallback that's explicitly opt-in
+for hosts where neither CoW filesystem is available.
+
+**bcachefs** is the natural successor candidate (mainline since 6.7)
+and would be a strong fit for MEDC, **but Incus does not yet provide
+a `bcachefs` storage driver**. The supported set is
+`dir`/`btrfs`/`zfs`/`lvm`/`lvm-thin`/`ceph*`/`linstor`. Tracked as a
+watch item; we add it to MEDC's supported drivers as soon as
+upstream lands one. See `docs/v1-design.md` §9.1 for detail.
 
 ## 4. Refactor roadmap
 
