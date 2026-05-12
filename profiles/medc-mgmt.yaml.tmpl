@@ -1,0 +1,25 @@
+# =============================================================================
+# medc-mgmt.yaml.tmpl — Incus profile for the management instance
+# =============================================================================
+#
+# Composes on top of medc-base. Sets the mgmt-specific default memory.
+# No additional cloud-init payload — mgmt is a well-configured Debian
+# instance ready for the k0s installer (second repo) to install k0s on.
+# k0rdent itself is installed in a separate downstream repo.
+#
+# Templating: shell `envsubst`. See `profiles/README.md`.
+# This file currently has no variable substitutions but goes through
+# envsubst for consistency with the other role profiles.
+# -----------------------------------------------------------------------------
+
+name: medc-mgmt
+description: |
+  MEDC management profile — composes on top of medc-base. Sets the
+  default 8 GiB memory limit. The mgmt instance is the future
+  k0rdent-cluster-manager host; MEDC just leaves it ready.
+
+config:
+  # 8 GiB default reflects observed k0rdent MCM memory pressure
+  # (docs/v1-design.md §3.3, parameter inventory §7). Per-instance
+  # override is honored if topology.instances[].memory differs.
+  limits.memory: 8GiB
