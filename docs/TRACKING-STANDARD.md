@@ -64,3 +64,36 @@ A phase is review-ready only when:
 - Keep detailed execution/test evidence in phase checklists.
 - Record deferred work explicitly in Handoff Notes with target phase.
 - Prefer minimal, phase-scoped changes over broad refactors.
+
+## Optional: Host-Phase Preflight Pattern
+
+For phases that run on real hosts (package install, kernel/sysctl,
+runtime checks), add a reusable preflight block to the phase README
+or checklist before mandatory test execution.
+
+Recommended preflight checks:
+
+- OS and privilege readiness (`/etc/os-release`, `sudo -v`)
+- default route/network availability
+- package visibility in apt repos
+- disk and memory headroom
+- required files exist on the checked-out branch
+
+Example:
+
+```bash
+set -euo pipefail
+
+uname -a
+cat /etc/os-release
+sudo -v
+
+ip -4 route show default
+apt-cache policy incus tailscale iptables-persistent | sed -n '1,20p'
+
+df -h /
+free -h
+
+test -f host/medc-host-prereqs.sh
+test -f host/incus-init.yaml.tmpl
+```

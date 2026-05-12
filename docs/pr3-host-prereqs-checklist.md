@@ -20,18 +20,18 @@ It breaks work into atomic implementation items and mandatory test requirements 
 
 ## Implementation Work Items
 
-- [ ] Create `host/medc-host-prereqs.sh` with strict mode (`set -euo pipefail`) and safe defaults.
-- [ ] Ensure script is executable and includes clear usage/help text.
-- [ ] Implement package install path for `incus`, `tailscale`, `iptables-persistent`.
-- [ ] Implement runtime kernel module load for `br_netfilter` and `overlay`.
-- [ ] Implement persistent kernel module configuration across reboot.
-- [ ] Implement runtime sysctl configuration for `net.ipv4.ip_forward=1`.
-- [ ] Implement persistent sysctl configuration across reboot.
-- [ ] Implement storage driver selection flow (interactive path).
-- [ ] Implement deterministic non-interactive storage selection behavior (flag/env/default).
-- [ ] Create `host/incus-init.yaml.tmpl` compatible with `incus admin init --preseed`.
-- [ ] Document rendering/usage path for the preseed template.
-- [ ] Add/update docs for PR3 usage and boundaries (what PR3 does vs PR4).
+- [x] Create `host/medc-host-prereqs.sh` with strict mode (`set -euo pipefail`) and safe defaults.
+- [x] Ensure script is executable and includes clear usage/help text.
+- [x] Implement package install path for `incus`, `tailscale`, `iptables-persistent`.
+- [x] Implement runtime kernel module load for `br_netfilter` and `overlay`.
+- [x] Implement persistent kernel module configuration across reboot.
+- [x] Implement runtime sysctl configuration for `net.ipv4.ip_forward=1`.
+- [x] Implement persistent sysctl configuration across reboot.
+- [x] Implement storage driver selection flow (interactive path).
+- [x] Implement deterministic non-interactive storage selection behavior (flag/env/default).
+- [x] Create `host/incus-init.yaml.tmpl` compatible with `incus admin init --preseed`.
+- [x] Document rendering/usage path for the preseed template.
+- [x] Add/update docs for PR3 usage and boundaries (what PR3 does vs PR4).
 - [ ] Confirm changes remain PR3-scoped only (no PR4 logic leakage).
 
 ## Mandatory Test Requirements
@@ -55,8 +55,8 @@ It breaks work into atomic implementation items and mandatory test requirements 
 
 | ID | Test | Command(s) | Expected | Actual | Result |
 |---|---|---|---|---|---|
-| T01 | Script syntax | `bash -n host/medc-host-prereqs.sh` | Exit 0 | _TBD_ | ⬜ |
-| T02 | Script executable | `test -x host/medc-host-prereqs.sh` | Exit 0 | _TBD_ | ⬜ |
+| T01 | Script syntax | `bash -n host/medc-host-prereqs.sh` | Exit 0 | Exit 0 | PASS |
+| T02 | Script executable | `test -x host/medc-host-prereqs.sh` | Exit 0 | Exit 0 | PASS |
 | T03 | Packages installed | `dpkg -s incus tailscale iptables-persistent` | All installed | _TBD_ | ⬜ |
 | T04 | Runtime modules | `lsmod` check | Both present | _TBD_ | ⬜ |
 | T05 | Module persistence | file + reboot + `lsmod` | Persisted + loaded | _TBD_ | ⬜ |
@@ -67,7 +67,7 @@ It breaks work into atomic implementation items and mandatory test requirements 
 | T10 | Preseed init | `incus admin init --preseed` | Exit 0 | _TBD_ | ⬜ |
 | T11 | Incus objects | `incus storage list`, `incus network list` | Match expected | _TBD_ | ⬜ |
 | T12 | Idempotency | run script twice | Both succeed | _TBD_ | ⬜ |
-| T13 | Error-path handling | induce controlled failure | Non-zero + clear error | _TBD_ | ⬜ |
+| T13 | Error-path handling | run script without root | Non-zero + clear error | `ERROR: run as root (use sudo)` | PASS |
 | T14 | Scope guard | `git diff --name-only <base>...HEAD` | PR3-only files | _TBD_ | ⬜ |
 
 ## Exit Criteria (PR3 Review-Ready)
