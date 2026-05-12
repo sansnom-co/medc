@@ -2,197 +2,89 @@
 
 ## Purpose
 
-This repository is maintained with AI-assisted development.
+Repository-wide operating rules for all agents.
 
-All agents must operate with:
+Always optimize for:
 - correctness over speed
 - minimal, reversible changes
-- explicit reasoning over assumption
-- adherence to repository conventions
+- explicit verification over assumption
+- consistency with repository conventions
 
-This file defines repository-wide rules that apply to all agents.
+Agent-specific guidance may add constraints, but must not weaken this file.
 
-Agent-specific files may add constraints, but must not weaken these rules.
+## Authority
 
----
-
-## Authority Model
-
-Precedence order:
-
+Rule precedence:
 1. `AGENTS.md`
-2. agent-specific files (e.g. `agents/*.md`)
+2. agent-specific files (for example `CLAUDE.md`)
 3. task instructions
-
-Higher levels constrain lower levels.
 
 If rules conflict, follow the higher level.
 
----
+## Orientation and Navigation
 
-## Repository Map
+Do not start with broad file scanning.
 
-This repository may include a Stacklit index and/or Stacklit MCP tools.
-
-Stacklit provides a structured repository map. It is used to understand:
-- modules and boundaries
-- dependencies between modules
-- likely entry points
-- structural relationships across the codebase
-
-Stacklit is for orientation and scope control.
-
-It provides structure, not implementation detail.
-
-### Rules
-
-When Stacklit is available:
-- use it first
-- identify the relevant module or subsystem before reading files
-- use dependency information to reduce the search space
-
-Do not modify code based only on Stacklit output.
-Always read the affected files before making changes.
-
----
-
-## Repository Navigation Tools
-
-Use repository navigation tools deliberately.
-
-### Preferred roles
-
-- **Stacklit**: structural orientation
-- **`rg` (ripgrep)**: fast content search across the repository
-- **`fzf`**: interactive narrowing and selection of files or search results
-- **direct file reads**: implementation verification before editing
-
-### Rules
-
-- use Stacklit first for structure when available
-- use `rg` for targeted repository search instead of broad manual scanning
-- use `fzf` to narrow candidate files or results when many matches exist
-- prefer targeted search over opening many files
-- do not browse directories blindly when search can identify likely files faster
-
-### Search discipline
-
-Prefer this sequence:
-
-1. Stacklit or equivalent repository map
-2. `rg` to identify candidate files, symbols, strings, or configuration
-3. `fzf` to narrow or select the right file/result when needed
-4. direct file reads for confirmation
+When a repository map is available (Stacklit):
+1. orient on structure and boundaries
+2. identify relevant module/subsystem
+3. narrow with search
+4. read only necessary files
 5. edit
 6. validate
 
-### Notes
+Preferred tools:
+- Stacklit: structure and boundaries
+- `rg`: targeted content search
+- `fzf`: narrowing large result sets
+- direct file reads: source-of-truth verification
 
-- `rg` is preferred over broad recursive grep for repository work
-- `fzf` is a narrowing tool, not a substitute for reading code
-- search results are hints, not proof; verify in source before editing
+Rules:
+- use Stacklit first when available
+- use targeted search instead of blind directory browsing
+- never modify code based only on structural summaries or search hits
 
----
+Fallback when Stacklit is unavailable:
+1. identify likely entry points manually
+2. use `rg`/`fzf` to narrow candidates
+3. read only required files
+4. proceed conservatively
 
-## Repository Orientation
+## Reading and Change Discipline
 
-Do not begin by scanning files.
-
-When a repository map is available, use it first.
-
-### Required sequence
-
-1. obtain a high-level overview
-2. identify the relevant module or subsystem
-3. inspect dependencies and boundaries
-4. read only the necessary files
-5. perform changes
-6. validate
-
-### Rules
-
-- do not read large parts of the repository without reason
-- do not explore directories blindly
-- prefer structure, then search, then detail
-
----
-
-## File Reading Policy
-
-- read the smallest number of files required
-- confirm assumptions in source before editing
-- do not modify code based only on summaries or inferred structure
-- do not rely on memory of similar systems
-
-All edits must be grounded in actual code.
-
----
-
-## Change Discipline
-
-For any task:
-
+For every task:
 1. identify the smallest viable change
 2. keep scope tightly bounded
-3. avoid unrelated edits
-4. preserve existing patterns
+3. preserve existing patterns
+4. avoid unrelated edits
 
-### Constraints
-
+Hard constraints:
 - no broad refactors unless explicitly requested
-- no renaming of files, modules, or symbols without need
-- no new dependencies without justification
-- no opportunistic cleanup during focused tasks
+- no unnecessary renames of files/modules/symbols
+- no new dependencies without clear justification
+- no opportunistic cleanup in focused tasks
 
-Prefer local, controlled changes over wide speculative edits.
+All edits must be grounded in current source, not memory or inference.
 
----
+## Behavioral Safety
 
-## Behavioural Safety
+Do not:
+- introduce hidden behavioral changes
+- silently alter defaults or configuration
+- weaken validation, error handling, or security posture
+- remove safeguards without explicit reason
 
-- do not introduce hidden behavioural changes
-- do not silently alter defaults or configuration
-- do not weaken validation, error handling, or security posture
-- do not remove existing safeguards without explicit reason
+If a change has side effects, state them explicitly.
 
-If a change has side effects, state them.
+## Validation and Reporting
 
----
-
-## Tool Use Policy
-
-Use tools deliberately and in order:
-
-1. repository map / structural tools
-2. search / symbol lookup
-3. direct file reads
-4. edit tools
-5. validation tools
-
-### Rules
-
-- do not rely on a single tool when verification is required
-- do not infer behaviour without reading source
-- do not skip validation
-
----
-
-## Validation
-
-After making changes:
-
+After edits:
 - run the smallest relevant validation first
-- expand scope only if required
+- expand validation scope only as needed
 
-### Examples
+Examples: targeted tests, file-scoped lint/type-check, narrow build step.
 
-- targeted unit test
-- file-scoped lint or type-check
-- narrow build step
-
-### Reporting
-
-Always state:
+Always report:
 - what was run
 - what passed
 - what failed
@@ -200,90 +92,51 @@ Always state:
 
 Do not claim success without evidence.
 
----
-
-## Handling Ambiguity
+## Ambiguity and Escalation
 
 When requirements are unclear:
-
-- state what is uncertain
+- state uncertainty
 - choose the least disruptive interpretation
 - avoid speculative changes
 
-If multiple approaches exist:
-- prefer the simplest
-- note alternatives briefly where useful
-
----
-
-## Working Style
-
-- keep edits small and readable
-- preserve repository conventions
-- avoid unnecessary abstraction
-- avoid over-engineering
-- prefer direct, factual explanations
-
-Clarity over cleverness.
-
----
-
-## Failure Modes to Avoid
-
-Avoid:
-- broad repository scanning without direction
-- edits based on assumption
-- large multi-file speculative changes
-- mixing unrelated changes
-- skipping validation
-- claiming certainty without verification
-
----
-
-## Escalation
-
 Stop and escalate when:
 - requirements conflict
-- expected behaviour is unclear
-- validation suggests broader impact than requested
-- change requires architectural redesign rather than local modification
-- security, data integrity, or operational boundaries may be affected
-
----
-
-## When Repository Map Is Not Available
-
-Fallback approach:
-
-1. identify entry points manually
-2. use `rg` to locate relevant files, symbols, and configuration
-3. use `fzf` to narrow candidate files where useful
-4. read only required files
-5. proceed conservatively
-
-Increase caution. Reduce scope.
-
----
+- expected behavior is unclear and materially affects outcome
+- validation indicates broader impact than requested
+- change requires architectural redesign
+- security/data-integrity/operational boundaries may be affected
 
 ## Output Expectations
 
-All work should be:
+Outputs must be:
 - minimal in scope
 - traceable to the request
-- consistent with repository conventions
-- validated or clearly marked as unvalidated
+- convention-consistent
+- validated or explicitly marked unvalidated
 
-Explanations should be:
-- concise
-- factual
-- grounded in observed code
+Explanations should be concise, factual, and grounded in observed code.
 
----
+## Progress Tracking Standard
 
-## Summary
+Use a two-layer tracking model:
+- `TODO.md`: high-level status and sequencing
+- `docs/pr*-*-checklist.md`: per-phase execution (atomic tasks, mandatory tests, evidence, exit criteria)
 
-- orient using structure before reading code
-- use `rg` and `fzf` to narrow search efficiently
+Agent requirements:
+- when opening/advancing a phase PR, update the matching checklist first
+- keep `TODO.md` status-oriented; do not store detailed test evidence there
+- mark phase items complete only after evidence is recorded in checklist
+- treat checklist as implementation truth and `TODO.md` as phase-status truth
+
+References:
+- `docs/TRACKING-STANDARD.md`
+- `docs/pr-phase-checklist-template.md`
+- `TODO-template.md`
+
+## Quick Summary
+
+- orient with structure first
+- narrow with `rg`/`fzf`
 - read only what is necessary
 - make small, deliberate changes
 - validate before concluding
